@@ -116,7 +116,9 @@ Business rules live in Go — not in the Node ticket store:
 - Sensitive-input screen, opener recusal, 3 open-ticket cap
 - Manual withdrawal ledger (`/mutasi`); bot never transfers funds
 
-HTTP (JWT): `/api/v1/tickets`, `/api/v1/membership`. Slash command catalog: `modules/discordbot`. Apply `migrations/000002_discord_marketplace.up.sql`.
+HTTP (JWT): `/api/v1/tickets`, `/api/v1/membership`.
+Discord gateway: set `DISCORD_BOT_TOKEN` + `DISCORD_GUILD_ID`, enable **Server Members Intent**, then `make run`.
+Apply `migrations/000002_discord_marketplace.up.sql`.
 
 ## Endpoints
 

@@ -48,11 +48,11 @@ func TestEligibleTicketApplicant(t *testing.T) {
 }
 
 func TestResolvePickedRoleAllowList(t *testing.T) {
-	role, add, ok := ResolvePickedRole("role:add:English")
-	if !ok || !add || role != "English" {
-		t.Fatalf("role=%s add=%v ok=%v", role, add, ok)
+	role, ok := ResolvePickedRole("rolepick:lang:en")
+	if !ok || role != "English" {
+		t.Fatalf("role=%s ok=%v", role, ok)
 	}
-	if _, _, ok := ResolvePickedRole("role:add:Platform Administrator"); ok {
+	if _, ok := ResolvePickedRole("rolepick:lang:Platform Administrator"); ok {
 		t.Fatal("staff role must be refused")
 	}
 }

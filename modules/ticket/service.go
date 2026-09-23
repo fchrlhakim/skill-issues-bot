@@ -29,6 +29,7 @@ type CreateInput struct {
 type ServiceInterface interface {
 	Create(ctx context.Context, actor Actor, input CreateInput) (Record, error)
 	Get(ctx context.Context, publicID string) (Record, error)
+	GetByThread(ctx context.Context, threadID string) (Record, error)
 	Queue(ctx context.Context, actor Actor, page int) ([]Record, error)
 	Claim(ctx context.Context, actor Actor, publicID string) (Record, error)
 	Handoff(ctx context.Context, actor Actor, publicID, targetID, reason string) (Record, error)
@@ -84,21 +85,36 @@ func (s *Service) Create(ctx context.Context, actor Actor, input CreateInput) (R
 		return Record{}, ErrNotEligible
 	}
 	data := map[string]string{}
-	for _, key := range spec.Requires {
-		value := NormalizeText(input.Data[key])
-		if value == "" {
-			return Record{}, ErrRequiredField
+	for key, raw := range input.Data {
+		if raw == "" {
+			continue
 		}
-		data[key] = value
+		data[key] = NormalizeText(raw)
 	}
-	region := NormalizeText(input.Data["region"])
-	if data["region"] != "" {
-		region = data["region"]
-	}
+	region := NormalizeText(data["region"])
 	if !ValidRegion(region) {
 		return Record{}, ErrInvalidRegion
 	}
 	data["region"] = region
+	if spec.Key != "withdraw" {
+		for _, key := range spec.Requires {
+			if key == "region" {
+				continue
+			}
+			if data[key] != "" {
+				continue
+			}
+			for _, alias := range []string{"chronology", "summary", "notes", "amount", "product"} {
+				if data[alias] != "" {
+					data[key] = data[alias]
+					break
+				}
+			}
+			if data[key] == "" {
+				return Record{}, ErrRequiredField
+			}
+		}
+	}
 	if len(SensitiveFindings(data)) > 0 {
 		return Record{}, ErrSensitive
 	}
@@ -145,6 +161,10 @@ func (s *Service) Create(ctx context.Context, actor Actor, input CreateInput) (R
 
 func (s *Service) Get(ctx context.Context, publicID string) (Record, error) {
 	return s.repository.FindByPublicID(ctx, publicID)
+}
+
+func (s *Service) GetByThread(ctx context.Context, threadID string) (Record, error) {
+	return s.repository.FindByThreadID(ctx, threadID)
 }
 
 func (s *Service) Queue(ctx context.Context, actor Actor, page int) ([]Record, error) {

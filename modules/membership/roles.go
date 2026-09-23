@@ -26,6 +26,40 @@ var LegacyMemberRoles = []string{
 	"New Member", "Verified Seller", "Provisional Seller", "Verified Buyer",
 }
 
+type PickerChoice struct {
+	Key   string
+	Role  string
+	Label string
+	Emoji string
+}
+
+var LanguageChoices = []PickerChoice{
+	{Key: "en", Role: "English", Label: "English", Emoji: "🇬🇧"},
+	{Key: "id", Role: "Bahasa Indonesia", Label: "Bahasa Indonesia", Emoji: "🇮🇩"},
+	{Key: "ms", Role: "Bahasa Melayu", Label: "Bahasa Melayu", Emoji: "🇲🇾"},
+	{Key: "fil", Role: "Filipino", Label: "Filipino", Emoji: "🇵🇭"},
+	{Key: "th", Role: "Thai", Label: "ไทย", Emoji: "🇹🇭"},
+	{Key: "vi", Role: "Vietnamese", Label: "Tiếng Việt", Emoji: "🇻🇳"},
+	{Key: "hi", Role: "Hindi", Label: "हिन्दी", Emoji: "🇮🇳"},
+	{Key: "bn", Role: "Bengali", Label: "বাংলা", Emoji: "🇧🇩"},
+	{Key: "zh", Role: "Chinese", Label: "中文", Emoji: "🇨🇳"},
+	{Key: "ja", Role: "Japanese", Label: "日本語", Emoji: "🇯🇵"},
+	{Key: "ko", Role: "Korean", Label: "한국어", Emoji: "🇰🇷"},
+}
+
+var RegionChoices = []PickerChoice{
+	{Key: "ID", Role: "Indonesia", Label: "Indonesia", Emoji: "🇮🇩"},
+	{Key: "MY", Role: "Malaysia", Label: "Malaysia", Emoji: "🇲🇾"},
+	{Key: "SG", Role: "Singapore", Label: "Singapore", Emoji: "🇸🇬"},
+	{Key: "PH", Role: "Philippines", Label: "Philippines", Emoji: "🇵🇭"},
+	{Key: "TH", Role: "Thailand", Label: "Thailand", Emoji: "🇹🇭"},
+	{Key: "VN", Role: "Vietnam", Label: "Vietnam", Emoji: "🇻🇳"},
+	{Key: "SA", Role: "South Asia", Label: "South Asia", Emoji: "🌏"},
+	{Key: "CN", Role: "Greater China", Label: "Greater China", Emoji: "🌏"},
+	{Key: "JP", Role: "Japan", Label: "Japan", Emoji: "🇯🇵"},
+	{Key: "KR", Role: "South Korea", Label: "South Korea", Emoji: "🇰🇷"},
+}
+
 var PickableRoles = []string{
 	"English", "Bahasa Indonesia", "Bahasa Melayu", "Filipino", "Thai",
 	"Vietnamese", "Hindi", "Bengali", "Chinese", "Japanese", "Korean",

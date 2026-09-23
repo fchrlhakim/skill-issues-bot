@@ -1,5 +1,7 @@
 package membership
 
+import "strings"
+
 const YoungAccountDays = 7
 
 const VerifyButtonID = "verify:accept"
@@ -90,20 +92,29 @@ func IsTicketAdmin(memberID, ownerID string, isBot, hasAdministrator bool) bool 
 	return memberID == ownerID || hasAdministrator
 }
 
-func ResolvePickedRole(customID string) (role string, add bool, ok bool) {
-	const addPrefix = "role:add:"
-	const removePrefix = "role:remove:"
-	switch {
-	case len(customID) > len(addPrefix) && customID[:len(addPrefix)] == addPrefix:
-		role = customID[len(addPrefix):]
-		add = true
-	case len(customID) > len(removePrefix) && customID[:len(removePrefix)] == removePrefix:
-		role = customID[len(removePrefix):]
+func ResolvePickedRole(customID string) (role string, ok bool) {
+	parts := strings.Split(customID, ":")
+	if len(parts) != 3 || parts[0] != "rolepick" {
+		return "", false
+	}
+	switch parts[1] {
+	case "lang":
+		for _, c := range LanguageChoices {
+			if c.Key == parts[2] {
+				role = c.Role
+			}
+		}
+	case "region":
+		for _, c := range RegionChoices {
+			if c.Key == parts[2] {
+				role = c.Role
+			}
+		}
 	default:
-		return "", false, false
+		return "", false
 	}
-	if !IsPickable(role) || IsNeverSelfAssignable(role) {
-		return "", false, false
+	if role == "" || !IsPickable(role) || IsNeverSelfAssignable(role) {
+		return "", false
 	}
-	return role, add, true
+	return role, true
 }

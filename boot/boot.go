@@ -25,19 +25,20 @@ import (
 )
 
 type HandlerSetup struct {
-	Config         config.Config
-	Logger         *logrus.Logger
-	Limiter        limiter.RateLimiter
-	Token          *jwt.Service
-	AuthHttp       auth.HttpInterface
-	AuditLog       auditLog.ServiceInterface
-	AuditHttp      auditLog.HttpInterface
-	HealthHttp     health.HttpInterface
-	UploadHttp     upload.HttpInterface
-	UserHttp       user.HttpInterface
-	TicketHttp     ticket.HttpInterface
-	MembershipHttp membership.HttpInterface
-	TicketService  ticket.ServiceInterface
+	Config            config.Config
+	Logger            *logrus.Logger
+	Limiter           limiter.RateLimiter
+	Token             *jwt.Service
+	AuthHttp          auth.HttpInterface
+	AuditLog          auditLog.ServiceInterface
+	AuditHttp         auditLog.HttpInterface
+	HealthHttp        health.HttpInterface
+	UploadHttp        upload.HttpInterface
+	UserHttp          user.HttpInterface
+	TicketHttp        ticket.HttpInterface
+	MembershipHttp    membership.HttpInterface
+	TicketService     ticket.ServiceInterface
+	MembershipService membership.ServiceInterface
 }
 
 func MakeHandler(cfg config.Config) (HandlerSetup, func(), error) {
@@ -102,18 +103,19 @@ func MakeHandler(cfg config.Config) (HandlerSetup, func(), error) {
 	}
 
 	return HandlerSetup{
-		Config:         cfg,
-		Logger:         log,
-		Limiter:        rateLimiter,
-		Token:          tokenService,
-		AuthHttp:       authHttp,
-		AuditLog:       auditService,
-		AuditHttp:      auditHttp,
-		HealthHttp:     healthHttp,
-		UploadHttp:     uploadHttp,
-		UserHttp:       userHttp,
-		TicketHttp:     ticketHttp,
-		MembershipHttp: membershipHttp,
-		TicketService:  ticketService,
+		Config:            cfg,
+		Logger:            log,
+		Limiter:           rateLimiter,
+		Token:             tokenService,
+		AuthHttp:          authHttp,
+		AuditLog:          auditService,
+		AuditHttp:         auditHttp,
+		HealthHttp:        healthHttp,
+		UploadHttp:        uploadHttp,
+		UserHttp:          userHttp,
+		TicketHttp:        ticketHttp,
+		MembershipHttp:    membershipHttp,
+		TicketService:     ticketService,
+		MembershipService: membershipService,
 	}, cleanup, nil
 }

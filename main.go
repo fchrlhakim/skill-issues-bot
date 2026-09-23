@@ -11,6 +11,7 @@ import (
 
 	"go-starter-kit/boot"
 	"go-starter-kit/infrastructure/config"
+	"go-starter-kit/modules/discordbot"
 	"go-starter-kit/router"
 )
 
@@ -42,6 +43,18 @@ func main() {
 			setup.Logger.Fatalf("server failed: %v", err)
 		}
 	}()
+
+	if cfg.Discord.BotToken != "" && cfg.Discord.GuildID != "" {
+		bot, err := discordbot.New(cfg.Discord.BotToken, cfg.Discord.GuildID, setup.TicketService, setup.MembershipService, setup.Logger)
+		if err != nil {
+			setup.Logger.Fatalf("discord bot: %v", err)
+		}
+		if err := bot.Open(); err != nil {
+			setup.Logger.Fatalf("discord login: %v", err)
+		}
+		defer func() { _ = bot.Close() }()
+		setup.Logger.Info("discord gateway started")
+	}
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
