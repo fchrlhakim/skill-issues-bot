@@ -117,6 +117,28 @@ func (r *Repository) ListOutgoingBySeller(ctx context.Context, sellerID string) 
 func (r *Repository) SaveOutgoing(ctx context.Context, rec primitive.OutgoingMutation) error {
 	return r.db.WithContext(ctx).Create(&rec).Error
 }
+func (r *Repository) Snapshot(ctx context.Context) (Snapshot, error) {
+	var tickets []primitive.Ticket
+	if err := r.db.WithContext(ctx).Select("status").Find(&tickets).Error; err != nil {
+		return Snapshot{}, err
+	}
+	var payments []primitive.OutgoingMutation
+	if err := r.db.WithContext(ctx).Select("currency", "amount_minor").Find(&payments).Error; err != nil {
+		return Snapshot{}, err
+	}
+	out := Snapshot{Tickets: map[string]int{}, Totals: map[string]int64{}}
+	for _, row := range tickets {
+		out.Tickets[row.Status]++
+		if row.Status != "closed" {
+			out.OpenTickets++
+		}
+	}
+	for _, row := range payments {
+		out.Payments++
+		out.Totals[row.Currency] += row.AmountMinor
+	}
+	return out, nil
+}
 
 func toModel(rec Record) primitive.Ticket {
 	seq := 0

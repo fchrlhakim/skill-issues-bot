@@ -14,11 +14,13 @@ type ServiceInterface interface {
 	Upsert(ctx context.Context, discordID, username, tier string, ageDays int, restricted bool) (primitive.GuildMember, error)
 	Find(ctx context.Context, discordID string) (primitive.GuildMember, error)
 	Verify(ctx context.Context, discordID string, roles []string, ageDays int) (VerifyDecision, error)
+	Snapshot(ctx context.Context) (ServerSnapshot, error)
 }
 
 type RepositoryInterface interface {
 	Upsert(ctx context.Context, member primitive.GuildMember) (primitive.GuildMember, error)
 	FindByDiscordID(ctx context.Context, discordID string) (primitive.GuildMember, error)
+	Snapshot(ctx context.Context) (ServerSnapshot, error)
 }
 
 type Repository struct {
@@ -63,6 +65,27 @@ func (r *Repository) FindByDiscordID(ctx context.Context, discordID string) (pri
 	return member, nil
 }
 
+type ServerSnapshot struct {
+	Members    int
+	Tiers      map[string]int
+	Restricted int
+}
+
+func (r *Repository) Snapshot(ctx context.Context) (ServerSnapshot, error) {
+	var members []primitive.GuildMember
+	if err := r.db.WithContext(ctx).Select("tier", "restricted").Find(&members).Error; err != nil {
+		return ServerSnapshot{}, err
+	}
+	out := ServerSnapshot{Members: len(members), Tiers: map[string]int{}}
+	for _, member := range members {
+		out.Tiers[member.Tier]++
+		if member.Restricted {
+			out.Restricted++
+		}
+	}
+	return out, nil
+}
+
 type Service struct {
 	repository RepositoryInterface
 }
@@ -95,4 +118,7 @@ func (s *Service) Verify(ctx context.Context, discordID string, roles []string, 
 	}
 	_, err := s.Upsert(ctx, discordID, "", tier, ageDays, Restricted(roles))
 	return decision, err
+}
+func (s *Service) Snapshot(ctx context.Context) (ServerSnapshot, error) {
+	return s.repository.Snapshot(ctx)
 }

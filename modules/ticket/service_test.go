@@ -73,6 +73,20 @@ func (m *memRepo) SaveOutgoing(ctx context.Context, rec primitive.OutgoingMutati
 	m.outgoing = append(m.outgoing, rec)
 	return nil
 }
+func (m *memRepo) Snapshot(ctx context.Context) (Snapshot, error) {
+	out := Snapshot{Tickets: map[string]int{}, Totals: map[string]int64{}}
+	for _, rec := range m.tickets {
+		out.Tickets[rec.Status]++
+		if !rec.Closed() {
+			out.OpenTickets++
+		}
+	}
+	for _, row := range m.outgoing {
+		out.Payments++
+		out.Totals[row.Currency] += row.AmountMinor
+	}
+	return out, nil
+}
 
 func TestCreateSupportTicket(t *testing.T) {
 	svc := NewService(newMem()).(*Service)

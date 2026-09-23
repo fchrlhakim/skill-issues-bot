@@ -1,9 +1,47 @@
+# Environment — never commit secrets
 .env
 .env.*
 !.env.example
+!.env*.example
+
+# Compiled binaries
 bin/
+*.exe
+# Bare `go build` names the binary after the module, not bin/
+/go-starter-kit
+
+# Local data / scratch
 data/
 tmp/
 coverage.out
+coverage/
 *.log
+*.bak
+
+# Host-generated TLS material
+certs/
+*.pem
+*.key
+
+# Tooling & Agent artifacts (machine-specific, never commit)
+.codegraph/
+.serena/
+graphify-out/
+.agent_memory.db
+.agent_memory.db-shm
+.agent_memory.db-wal
+.claude.json
+.mcp.json
+.cursorrules
+.agent-rules.md
+gitleaks-report.json
+
+# Local audit scratch reports — private working notes, not for the repo
+docs/audits/
+
+# OS / editor
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

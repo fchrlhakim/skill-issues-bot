@@ -3,7 +3,11 @@ package discordbot
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +34,9 @@ type Bot struct {
 	confirmMu   sync.Mutex
 	confirms    map[string]pendingConfirm
 	reminderAt  time.Time
+	revenue     *http.Client
+	revenueURL  string
+	revenueAuth string
 }
 
 func New(token, guildID string, tickets ticket.ServiceInterface, members membership.ServiceInterface, log *logrus.Logger) (*Bot, error) {
@@ -38,7 +45,7 @@ func New(token, guildID string, tickets ticket.ServiceInterface, members members
 		return nil, err
 	}
 	session.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMembers
-	bot := &Bot{session: session, guildID: guildID, tickets: tickets, members: members, log: log, channelIDs: map[string]string{}, stop: make(chan struct{}), confirms: map[string]pendingConfirm{}}
+	bot := &Bot{session: session, guildID: guildID, tickets: tickets, members: members, log: log, channelIDs: map[string]string{}, stop: make(chan struct{}), confirms: map[string]pendingConfirm{}, revenue: &http.Client{Timeout: 5 * time.Second}, revenueURL: os.Getenv("SAAS_REVENUE_URL"), revenueAuth: os.Getenv("SAAS_REVENUE_TOKEN")}
 	session.AddHandler(bot.onReady)
 	session.AddHandler(bot.onInteraction)
 	session.AddHandler(bot.onJoin)
@@ -152,6 +159,127 @@ func (b *Bot) staff(text string) {
 		return
 	}
 	_, _ = b.session.ChannelMessageSend(ch, "`"+time.Now().UTC().Format(time.RFC3339)+"` "+text)
+}
+func (b *Bot) serverSnapshot(ctx context.Context, s *discordgo.Session) string {
+	members, err := b.members.Snapshot(ctx)
+	if err != nil {
+		return err.Error()
+	}
+	tickets, err := b.tickets.Snapshot(ctx)
+	if err != nil {
+		return err.Error()
+	}
+	discordCount := "unavailable"
+	if guild, err := s.GuildWithCounts(b.guildID); err == nil {
+		discordCount = itoa(guild.ApproximateMemberCount)
+	}
+	return strings.Join([]string{
+		"Discord members: " + discordCount,
+		"Stored members: " + itoa(members.Members),
+		"User / Buyer / Seller: " + itoa(members.Tiers[membership.TierUser]) + " / " + itoa(members.Tiers[membership.TierBuyer]) + " / " + itoa(members.Tiers[membership.TierSeller]),
+		"Restricted: " + itoa(members.Restricted),
+		"Open tickets: " + itoa(tickets.OpenTickets),
+		"Tickets by status: " + countList(tickets.Tickets),
+	}, "\n")
+}
+
+func (b *Bot) revenueSnapshot(ctx context.Context) string {
+	snapshot, err := b.tickets.Snapshot(ctx)
+	if err != nil {
+		return err.Error()
+	}
+	lines := []string{"Bot confirmed outgoing records: " + itoa(snapshot.Payments)}
+	if snapshot.Payments == 0 {
+		lines = append(lines, "No confirmed bot payments. Approval is not payment.")
+	}
+	for _, currency := range sortedKeys(snapshot.Totals) {
+		lines = append(lines, currency+": "+ticket.FormatAmount(snapshot.Totals[currency], currency))
+	}
+	saas, err := b.saasRevenue(ctx)
+	if err != nil {
+		// A silent failure here costs hours: a 401, a network error, and a bad
+		// body all render the same line. Log the cause; never log the token.
+		b.log.WithError(err).Warn("saas revenue lookup failed")
+		lines = append(lines, "SaaS revenue: unavailable")
+	} else {
+		lines = append(lines, saas)
+	}
+	return strings.Join(lines, "\n")
+}
+
+type saasFinance struct {
+	Data struct {
+		Summary struct {
+			TodayFee   string `json:"today_platform_fee_nano_usd"`
+			MonthFee   string `json:"month_platform_fee_nano_usd"`
+			AllFee     string `json:"all_time_platform_fee_nano_usd"`
+			TodayCount int64  `json:"today_requests"`
+			MonthCount int64  `json:"month_requests"`
+			AllCount   int64  `json:"all_time_requests"`
+		} `json:"summary"`
+	} `json:"data"`
+}
+
+func (b *Bot) saasRevenue(ctx context.Context) (string, error) {
+	if b.revenueURL == "" || b.revenueAuth == "" {
+		return "", fmt.Errorf("not configured")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.revenueURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+b.revenueAuth)
+	res, err := b.revenue.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("status %d from %s", res.StatusCode, b.revenueURL)
+	}
+	var body saasFinance
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		return "", err
+	}
+	summary := body.Data.Summary
+	return strings.Join([]string{
+		"SaaS platform fee today: " + nanoUSD(summary.TodayFee) + " (" + itoa64(summary.TodayCount) + " requests)",
+		"SaaS platform fee this month: " + nanoUSD(summary.MonthFee) + " (" + itoa64(summary.MonthCount) + " requests)",
+		"SaaS platform fee all time: " + nanoUSD(summary.AllFee) + " (" + itoa64(summary.AllCount) + " requests)",
+	}, "\n"), nil
+}
+
+func nanoUSD(value string) string {
+	var nano int64
+	fmt.Sscan(value, &nano)
+	sign := ""
+	if nano < 0 {
+		sign = "-"
+		nano = -nano
+	}
+	return sign + "$" + itoa64(nano/1_000_000_000) + "." + fmt.Sprintf("%09d", nano%1_000_000_000)
+}
+
+func itoa64(value int64) string { return itoa(int(value)) }
+
+func countList(counts map[string]int) string {
+	if len(counts) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(counts))
+	for _, key := range sortedKeys(counts) {
+		parts = append(parts, key+" "+itoa(counts[key]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func sortedKeys[T any](values map[string]T) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (b *Bot) roleNames(s *discordgo.Session, m *discordgo.Member) []string {

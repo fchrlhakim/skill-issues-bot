@@ -41,6 +41,7 @@ type ServiceInterface interface {
 	ApproveSeller(ctx context.Context, actor Actor, publicID, reason string, openerRoles []string) (Record, error)
 	Mutasi(ctx context.Context, actor Actor) ([]primitive.OutgoingMutation, error)
 	Whoami(actor Actor) map[string]any
+	Snapshot(ctx context.Context) (Snapshot, error)
 }
 
 type RepositoryInterface interface {
@@ -52,6 +53,7 @@ type RepositoryInterface interface {
 	ListByOpener(ctx context.Context, openerID string) ([]Record, error)
 	ListOutgoingBySeller(ctx context.Context, sellerID string) ([]primitive.OutgoingMutation, error)
 	SaveOutgoing(ctx context.Context, rec primitive.OutgoingMutation) error
+	Snapshot(ctx context.Context) (Snapshot, error)
 }
 
 type Service struct {
@@ -61,6 +63,13 @@ type Service struct {
 
 func NewService(repository RepositoryInterface) ServiceInterface {
 	return &Service{repository: repository, now: time.Now}
+}
+
+type Snapshot struct {
+	OpenTickets int
+	Tickets     map[string]int
+	Payments    int
+	Totals      map[string]int64
 }
 
 func (s *Service) requireAdmin(actor Actor, rec Record) error {
@@ -366,6 +375,9 @@ func (s *Service) Whoami(actor Actor) map[string]any {
 		"admin":      membership.IsTicketAdmin(actor.ID, actor.OwnerID, actor.IsBot, actor.IsAdmin),
 		"restricted": membership.Restricted(actor.Roles),
 	}
+}
+func (s *Service) Snapshot(ctx context.Context) (Snapshot, error) {
+	return s.repository.Snapshot(ctx)
 }
 
 func EncodeJSON(v any) string {

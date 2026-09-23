@@ -67,7 +67,7 @@ func (b *Bot) onInteraction(s *discordgo.Session, i *discordgo.InteractionCreate
 
 func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate, actor ticket.Actor, admin bool) {
 	name := i.ApplicationCommandData().Name
-	adminOnly := map[string]bool{"panel": true, "rolepanel": true, "verifypanel": true, "testwelcome": true, "lookup": true, "tickets": true, "ticket-handoff": true, "ticket-resolution": true, "seller-approve": true, "withdraw-paid": true, "rolesync": true, "guildsync": true}
+	adminOnly := map[string]bool{"panel": true, "rolepanel": true, "verifypanel": true, "testwelcome": true, "lookup": true, "tickets": true, "ticket-handoff": true, "ticket-resolution": true, "seller-approve": true, "withdraw-paid": true, "rolesync": true, "guildsync": true, "server": true, "revenue": true}
 	if adminOnly[name] && !admin {
 		b.edit(s, i, "Admin only.", nil, nil)
 		return
@@ -138,6 +138,10 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 			lines = append(lines, fmt.Sprintf("`%s` %s %s %s", row.PublicID, row.Reference, row.Currency, row.PaidAt.Format("2006-01-02")))
 		}
 		b.edit(s, i, strings.Join(lines, "\n"), nil, nil)
+	case "server":
+		b.edit(s, i, b.serverSnapshot(ctx, s), nil, nil)
+	case "revenue":
+		b.edit(s, i, b.revenueSnapshot(ctx), nil, nil)
 	case "lookup":
 		targetID := option("member")
 		m, err := s.GuildMember(b.guildID, targetID)

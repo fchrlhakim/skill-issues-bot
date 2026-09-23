@@ -36,6 +36,8 @@ Fill:
 | `DISCORD_BOT_TOKEN` | Developer Portal → Bot → Reset Token |
 | `DISCORD_GUILD_ID` | server ID |
 | `GHCR_PULL_TOKEN` | optional; CD falls back to the run token |
+| `SAAS_REVENUE_URL` | optional; enables `/revenue`. Use `http://skill-issues-saas-be:8080/api/v1/admin/reports/finance-overview` |
+| `SAAS_REVENUE_TOKEN` | optional; SaaS admin access token for the URL above. Leave both empty to keep `/revenue` at `SaaS revenue: unavailable` |
 
 Enable **Server Members Intent** on the Discord application.
 

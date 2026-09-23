@@ -27,6 +27,8 @@ var Commands = []Command{
 	{Name: "withdraw-paid", Description: "Record an already completed external withdrawal payment (admin only)", AdminOnly: true},
 	{Name: "rolesync", Description: "Create missing launch roles (admin only, never deletes)", AdminOnly: true},
 	{Name: "guildsync", Description: "Create missing launch categories and channels (admin only, never deletes)", AdminOnly: true},
+	{Name: "server", Description: "Show member and ticket counts for this server (admin only)", AdminOnly: true},
+	{Name: "revenue", Description: "Show confirmed outgoing ledger totals (admin only)", AdminOnly: true},
 }
 
 const SafetyCopy = "Admins never ask for passwords, OTP, PIN, CVV, full card numbers, API keys, private keys, or seed phrases. " +

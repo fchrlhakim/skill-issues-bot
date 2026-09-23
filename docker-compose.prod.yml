@@ -78,6 +78,8 @@ services:
       METRICS_ENABLE: ${METRICS_ENABLE:-true}
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?set DISCORD_BOT_TOKEN in .env.production}
       DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:?set DISCORD_GUILD_ID in .env.production}
+      SAAS_REVENUE_URL: ${SAAS_REVENUE_URL:-}
+      SAAS_REVENUE_TOKEN: ${SAAS_REVENUE_TOKEN:-}
       SKIP_MIGRATIONS: ${SKIP_MIGRATIONS:-}
       TZ: Asia/Jakarta
     ports:
@@ -86,6 +88,7 @@ services:
       - storage:/app/storage
     networks:
       - internal
+      - saas
     logging: *default-logging
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/api/v1/health/live"]
@@ -101,7 +104,9 @@ services:
 
 networks:
   internal:
-
+  saas:
+    external: true
+    name: skill-issues-saas_saas-network
 volumes:
   pgdata:
   storage:
