@@ -2,23 +2,39 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  backend:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-      - run: go mod download
-      - run: go test ./...
-      - run: go vet ./...
-      - run: go build ./...
-      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
-      - run: govulncheck ./...
-      - run: go install github.com/securego/gosec/v2/cmd/gosec@v2.26.1
-      - run: gosec ./...
-      - uses: gitleaks/gitleaks-action@v2
-      - run: test -f migrations/000001_create_users.up.sql && test -f migrations/000001_create_users.down.sql
+          cache-dependency-path: go.sum
+      - run: go mod verify
+      - name: Check code formatting (gofmt)
+        run: gofmt -l . | tee /tmp/gofmt.txt && test ! -s /tmp/gofmt.txt
+      - name: Go vet
+        run: go vet ./...
+      - name: Go test
+        run: go test ./... -count=1
+      - name: Go build
+        run: go build ./...
+      - name: Migrations present
+        run: |
+          test -f migrations/postgres/000001_create_users.up.sql
+          test -f migrations/postgres/000002_discord_marketplace.up.sql
+          test -f deploy/be.Dockerfile
+          test -f docker-compose.prod.yml

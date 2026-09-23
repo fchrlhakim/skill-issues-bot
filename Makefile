@@ -1,4 +1,4 @@
-APP_NAME := go-starter-kit
+APP_NAME := skill-issues-bot
 
 .PHONY: run test tidy build docker-up docker-down migrate-up
 

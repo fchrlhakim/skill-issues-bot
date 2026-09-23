@@ -7,14 +7,14 @@ import (
 )
 
 type GuildMember struct {
-	ID           uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	DiscordID    string    `gorm:"column:discord_id;not null;uniqueIndex" json:"discord_id"`
-	Username     string    `gorm:"not null" json:"username"`
-	Tier         string    `gorm:"not null;index" json:"tier"`
-	AccountAgeDays int     `gorm:"not null;default:0" json:"account_age_days"`
-	Restricted   bool      `gorm:"not null;default:false" json:"restricted"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID             uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	DiscordID      string    `gorm:"column:discord_id;not null;uniqueIndex" json:"discord_id"`
+	Username       string    `gorm:"not null" json:"username"`
+	Tier           string    `gorm:"not null;index" json:"tier"`
+	AccountAgeDays int       `gorm:"not null;default:0" json:"account_age_days"`
+	Restricted     bool      `gorm:"not null;default:false" json:"restricted"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 func (GuildMember) TableName() string { return "guild_members" }

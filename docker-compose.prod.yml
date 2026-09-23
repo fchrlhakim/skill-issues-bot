@@ -1,0 +1,107 @@
+# Production stack for the Discord marketplace bot.
+# Unique project/container names so this never collides with skill-issues-saas
+# or skill-issues-core on a shared 2 vCPU / 4 GB VPS.
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d
+#
+# Discord gateway is outbound-only. HTTP is loopback for health/debug.
+name: skill-issues-bot
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: skill-issues-bot-pg
+    restart: unless-stopped
+    shm_size: 64MB
+    environment:
+      POSTGRES_DB: ${DB_NAME:-skillbot}
+      POSTGRES_USER: ${DB_USER:-skillbot}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.production}
+    command: >
+      postgres
+      -c shared_buffers=64MB
+      -c effective_cache_size=256MB
+      -c work_mem=4MB
+      -c max_connections=20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-skillbot} -d ${DB_NAME:-skillbot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      internal:
+        aliases:
+          - skill-issues-bot-pg
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "${PG_CPUS:-0.25}"
+          memory: ${PG_MEM_LIMIT:-256m}
+
+  bot-be:
+    image: ${IMAGE_BACKEND:-ghcr.io/fchrlhakim/skill-issues-bot:latest}
+    container_name: skill-issues-bot-be
+    restart: unless-stopped
+    stop_grace_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: prod
+      APP_NAME: skill-issues-bot
+      APP_PORT: "8080"
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-info}
+      APP_LOG_FORMAT: json
+      DB_DRIVER: postgres
+      DB_HOST: skill-issues-bot-pg
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-skillbot}
+      DB_USER: ${DB_USER:-skillbot}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.production}
+      DB_SSL_MODE: ${DB_SSL_MODE:-disable}
+      DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-10}
+      DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-5}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET (>=32 chars) in .env.production}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://127.0.0.1:8080}
+      REDIS_ENABLE: "false"
+      RATE_LIMIT_RPS: ${RATE_LIMIT_RPS:-10}
+      RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-20}
+      METRICS_ENABLE: ${METRICS_ENABLE:-true}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?set DISCORD_BOT_TOKEN in .env.production}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:?set DISCORD_GUILD_ID in .env.production}
+      SKIP_MIGRATIONS: ${SKIP_MIGRATIONS:-}
+      TZ: Asia/Jakarta
+    ports:
+      - "127.0.0.1:18102:8080"
+    volumes:
+      - storage:/app/storage
+    networks:
+      - internal
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/api/v1/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "${BE_CPUS:-0.5}"
+          memory: ${BE_MEM_LIMIT:-384m}
+
+networks:
+  internal:
+
+volumes:
+  pgdata:
+  storage:

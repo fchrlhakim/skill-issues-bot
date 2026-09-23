@@ -120,6 +120,8 @@ HTTP (JWT): `/api/v1/tickets`, `/api/v1/membership`.
 Discord gateway: set `DISCORD_BOT_TOKEN` + `DISCORD_GUILD_ID`, enable **Server Members Intent**, then `make run`.
 Apply `migrations/000002_discord_marketplace.up.sql`.
 
+Production: see `DEPLOY.md`. CD is manual (`workflow_dispatch`), image `ghcr.io/<owner>/skill-issues-bot`.
+
 ## Endpoints
 
 - `GET /api/v1/health/live`

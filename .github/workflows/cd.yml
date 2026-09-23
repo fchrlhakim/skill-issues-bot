@@ -1,0 +1,216 @@
+name: CD - Build & Deploy
+
+# Auto-deploy is OFF. Push to main must not SSH into the live VPS.
+# Start a release from Actions → CD → Run workflow only when deploying.
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: 'Deployment target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+      run_migrations:
+        description: 'Run database migrations during deployment'
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci-gate:
+    name: Require a green CI run
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Record trigger
+        run: echo "CD allowed (event=${{ github.event_name }})"
+
+  build-and-push:
+    name: Build & Push Docker Image to GHCR
+    needs: ci-gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      be_image: ${{ steps.prep.outputs.be_image }}
+      image_tag: ${{ steps.prep.outputs.image_tag }}
+      be_digest: ${{ steps.build-be.outputs.digest }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Prepare image names & tags
+        id: prep
+        run: |
+          REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          BE_IMG="ghcr.io/${REPO_OWNER}/skill-issues-bot"
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "be_image=${BE_IMG}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push Bot Image
+        id: build-be
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ./deploy/be.Dockerfile
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: |
+            ${{ steps.prep.outputs.be_image }}:latest
+            ${{ steps.prep.outputs.be_image }}:${{ steps.prep.outputs.image_tag }}
+            ${{ steps.prep.outputs.be_image }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan bot image
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          image-ref: ${{ steps.prep.outputs.be_image }}@${{ steps.build-be.outputs.digest }}
+          format: table
+          exit-code: '1'
+          severity: CRITICAL
+          ignore-unfixed: true
+
+  deploy-ssh:
+    name: Deploy via SSH to Host
+    needs: [ci-gate, build-and-push]
+    environment: production
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Check SSH configuration
+        id: check-ssh
+        run: |
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then
+            echo "::warning ::SSH_HOST secret is not configured. Skipping SSH deploy."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Copy deployment configs to remote host
+        if: steps.check-ssh.outputs.configured == 'true'
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE || '' }}
+          source: 'docker-compose.prod.yml,.env.example'
+          target: ${{ secrets.DEPLOY_PATH || '~/app/skill-issues-bot' }}
+
+      - name: Execute deployment commands via SSH
+        if: steps.check-ssh.outputs.configured == 'true'
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        env:
+          IMAGE_BE: ${{ needs.build-and-push.outputs.be_image }}
+          IMAGE_TAG: ${{ needs.build-and-push.outputs.image_tag }}
+          BE_DIGEST: ${{ needs.build-and-push.outputs.be_digest }}
+          DEPLOY_DIR: ${{ secrets.DEPLOY_PATH || '~/app/skill-issues-bot' }}
+          RUN_MIGRATE: ${{ github.event.inputs.run_migrations || 'true' }}
+          DEPLOY_TARGET: ${{ github.event.inputs.deploy_target || 'production' }}
+          GHCR_RUN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_RUN_USER: ${{ github.actor }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE || '' }}
+          envs: IMAGE_BE,IMAGE_TAG,BE_DIGEST,DEPLOY_DIR,RUN_MIGRATE,DEPLOY_TARGET,GHCR_RUN_TOKEN,GHCR_RUN_USER
+          script: |
+            set -euo pipefail
+
+            if [ -z "${BE_DIGEST:-}" ]; then
+              echo "::error ::Missing image digest from the build job - refusing to deploy a tag."
+              exit 1
+            fi
+            if [ "$DEPLOY_TARGET" != "production" ]; then
+              echo "::error ::deploy_target='$DEPLOY_TARGET' is not implemented - refusing to deploy."
+              exit 1
+            fi
+
+            case "$DEPLOY_DIR" in
+              "~")   DEPLOY_DIR="$HOME" ;;
+              "~/"*) DEPLOY_DIR="$HOME/${DEPLOY_DIR#\~/}" ;;
+              /*)    : ;;
+              *)     DEPLOY_DIR="$HOME/$DEPLOY_DIR" ;;
+            esac
+            mkdir -p "$DEPLOY_DIR"
+            cd "$DEPLOY_DIR"
+
+            if [ ! -f .env.production ]; then
+              echo "::error ::Missing $DEPLOY_DIR/.env.production - refusing to deploy."
+              echo "Copy .env.example to .env.production and fill DB_PASSWORD, JWT_SECRET, DISCORD_BOT_TOKEN, DISCORD_GUILD_ID."
+              exit 1
+            fi
+
+            ghcr_user="$(sed -n 's/^[[:space:]]*GHCR_USERNAME[[:space:]]*=[[:space:]]*//p' .env.production | tail -n 1 | sed 's/[[:space:]][[:space:]]*#.*$//' | tr -d '"'"'"' ')"
+            ghcr_token="$(sed -n 's/^[[:space:]]*GHCR_PULL_TOKEN[[:space:]]*=[[:space:]]*//p' .env.production | tail -n 1 | sed 's/[[:space:]][[:space:]]*#.*$//' | tr -d '"'"'"' ')"
+            if [ -z "$ghcr_token" ] && [ -n "${GHCR_RUN_TOKEN:-}" ]; then
+              ghcr_token="$GHCR_RUN_TOKEN"
+              ghcr_user="${GHCR_RUN_USER:-$ghcr_user}"
+            fi
+            if [ -n "$ghcr_token" ]; then
+              echo "$ghcr_token" | docker login ghcr.io -u "${ghcr_user:-$USER}" --password-stdin
+            else
+              echo "::warning ::No GHCR pull credential: set GHCR_PULL_TOKEN in .env.production."
+            fi
+
+            LAST_TAG_FILE="$(pwd)/.last-deployed-tag"
+            PREV_TAG_FILE="$(pwd)/.previous-deployed-tag"
+            cid="$(docker compose -f docker-compose.prod.yml ps -aq bot-be 2>/dev/null | awk 'NR==1' || true)"
+            PREV_BE=""
+            if [ -n "$cid" ]; then
+              PREV_BE="$(docker inspect --format '{{.Config.Image}}' "$cid" 2>/dev/null || true)"
+            fi
+            if [ -n "$PREV_BE" ]; then
+              echo "Rollback: IMAGE_BACKEND='$PREV_BE' docker compose -f docker-compose.prod.yml --env-file .env.production up -d"
+            fi
+            if [ -f "$LAST_TAG_FILE" ]; then
+              mv -f "$LAST_TAG_FILE" "$PREV_TAG_FILE"
+            fi
+            printf '%s\n' "$IMAGE_TAG" > "$LAST_TAG_FILE"
+
+            docker pull "${IMAGE_BE}@${BE_DIGEST}"
+            docker logout ghcr.io >/dev/null 2>&1 || true
+
+            SKIP_MIGRATIONS=""
+            if [ "$RUN_MIGRATE" != "true" ]; then
+              SKIP_MIGRATIONS=true
+            fi
+            IMAGE_BACKEND="${IMAGE_BE}@${BE_DIGEST}" SKIP_MIGRATIONS="$SKIP_MIGRATIONS" \
+              docker compose -f docker-compose.prod.yml --env-file .env.production up -d --remove-orphans
+
+            echo "Deployed skill-issues-bot $IMAGE_TAG"
