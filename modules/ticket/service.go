@@ -30,6 +30,7 @@ type ServiceInterface interface {
 	Create(ctx context.Context, actor Actor, input CreateInput) (Record, error)
 	Get(ctx context.Context, publicID string) (Record, error)
 	GetByThread(ctx context.Context, threadID string) (Record, error)
+	ListOpen(ctx context.Context) ([]Record, error)
 	Queue(ctx context.Context, actor Actor, page int) ([]Record, error)
 	Claim(ctx context.Context, actor Actor, publicID string) (Record, error)
 	Handoff(ctx context.Context, actor Actor, publicID, targetID, reason string) (Record, error)
@@ -165,6 +166,10 @@ func (s *Service) Get(ctx context.Context, publicID string) (Record, error) {
 
 func (s *Service) GetByThread(ctx context.Context, threadID string) (Record, error) {
 	return s.repository.FindByThreadID(ctx, threadID)
+}
+
+func (s *Service) ListOpen(ctx context.Context) ([]Record, error) {
+	return s.repository.ListOpen(ctx)
 }
 
 func (s *Service) Queue(ctx context.Context, actor Actor, page int) ([]Record, error) {

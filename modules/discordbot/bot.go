@@ -1,6 +1,7 @@
 package discordbot
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -15,13 +16,20 @@ import (
 )
 
 type Bot struct {
-	session    *discordgo.Session
-	guildID    string
-	tickets    ticket.ServiceInterface
-	members    membership.ServiceInterface
-	log        *logrus.Logger
-	pending    sync.Map
-	channelIDs map[string]string
+	session     *discordgo.Session
+	guildID     string
+	tickets     ticket.ServiceInterface
+	members     membership.ServiceInterface
+	log         *logrus.Logger
+	pending     sync.Map
+	channelIDs  map[string]string
+	writerLock  *processLock
+	stop        chan struct{}
+	joinsMu     sync.Mutex
+	recentJoins []time.Time
+	confirmMu   sync.Mutex
+	confirms    map[string]pendingConfirm
+	reminderAt  time.Time
 }
 
 func New(token, guildID string, tickets ticket.ServiceInterface, members membership.ServiceInterface, log *logrus.Logger) (*Bot, error) {
@@ -30,7 +38,7 @@ func New(token, guildID string, tickets ticket.ServiceInterface, members members
 		return nil, err
 	}
 	session.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMembers
-	bot := &Bot{session: session, guildID: guildID, tickets: tickets, members: members, log: log, channelIDs: map[string]string{}}
+	bot := &Bot{session: session, guildID: guildID, tickets: tickets, members: members, log: log, channelIDs: map[string]string{}, stop: make(chan struct{}), confirms: map[string]pendingConfirm{}}
 	session.AddHandler(bot.onReady)
 	session.AddHandler(bot.onInteraction)
 	session.AddHandler(bot.onJoin)
@@ -39,14 +47,33 @@ func New(token, guildID string, tickets ticket.ServiceInterface, members members
 }
 
 func (b *Bot) Open() error {
-	if err := b.session.Open(); err != nil {
+	lease, err := acquireBotLock("data")
+	if err != nil {
 		return err
 	}
-	_, err := b.session.ApplicationCommandBulkOverwrite(b.session.State.User.ID, b.guildID, slashCommands())
-	return err
+	b.writerLock = lease
+	writeHeartbeat("data")
+	if err := b.session.Open(); err != nil {
+		lease.release()
+		return err
+	}
+	_, err = b.session.ApplicationCommandBulkOverwrite(b.session.State.User.ID, b.guildID, slashCommands())
+	if err != nil {
+		return err
+	}
+	b.startReminder()
+	return nil
 }
 
 func (b *Bot) Close() error {
+	select {
+	case <-b.stop:
+	default:
+		close(b.stop)
+	}
+	if b.writerLock != nil {
+		b.writerLock.release()
+	}
 	return b.session.Close()
 }
 
@@ -259,11 +286,21 @@ func (b *Bot) onJoin(s *discordgo.Session, ev *discordgo.GuildMemberAdd) {
 	_ = b.exclusiveTier(s, ev.User.ID, membership.TierUser)
 	age := accountAgeDays(ev.User)
 	_, _ = b.members.Upsert(context.Background(), ev.User.ID, ev.User.Username, membership.TierUser, age, false)
+	b.noteJoin()
+	if age < 7 {
+		b.staff("New account joined: member " + ev.User.ID + " is " + itoa(age) + "d old. Watch first messages.")
+	}
 	if ch := b.channel("welcome"); ch != "" {
-		_, _ = s.ChannelMessageSendEmbed(ch, &discordgo.MessageEmbed{
+		embed := &discordgo.MessageEmbed{
 			Title: "Welcome to Skillissue.ai", Color: 0x1ABC9C,
-			Description: "<@" + ev.User.ID + ">\nRead the rules, then Verify to access the marketplace.",
+			Description: "<@" + ev.User.ID + ">\nRead the rules, then Verify to access the marketplace.\n" + SafetyCopy,
 			Footer:      &discordgo.MessageEmbedFooter{Text: disclaimer},
+		}
+		png := renderWelcomePNG(ev.User.Username, 0)
+		_, _ = s.ChannelMessageSendComplex(ch, &discordgo.MessageSend{
+			Content: "<@" + ev.User.ID + ">", Embeds: []*discordgo.MessageEmbed{embed},
+			Files:           []*discordgo.File{{Name: "welcome.png", Reader: bytes.NewReader(png)}},
+			AllowedMentions: &discordgo.MessageAllowedMentions{Users: []string{ev.User.ID}},
 		})
 	}
 	b.audit(ev.GuildID, "member.join", "member "+ev.User.ID)

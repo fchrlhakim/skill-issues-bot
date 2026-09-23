@@ -7,7 +7,7 @@ func TestCommandCatalogMatchesHandoff(t *testing.T) {
 		"panel": true, "rolepanel": true, "verifypanel": true, "testwelcome": true,
 		"tickets": true, "ticket-status": false, "ticket-handoff": true, "ticket-resolution": true,
 		"whoami": false, "safety": false, "lookup": true, "withdraw": false, "mutasi": false,
-		"seller-approve": true, "withdraw-paid": true,
+		"seller-approve": true, "withdraw-paid": true, "rolesync": true,
 	}
 	if len(Commands) != len(want) {
 		t.Fatalf("got %d commands", len(Commands))

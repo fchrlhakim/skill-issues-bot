@@ -122,6 +122,8 @@ Apply `migrations/000002_discord_marketplace.up.sql`.
 
 Production: see `DEPLOY.md`. CD is manual (`workflow_dispatch`), image `ghcr.io/<owner>/skill-issues-bot`.
 
+Guild layout: `/rolesync` creates missing launch roles (never deletes). Channel apply stays a one-time Discord admin job; the live bot does not recreate channels.
+
 ## Endpoints
 
 - `GET /api/v1/health/live`

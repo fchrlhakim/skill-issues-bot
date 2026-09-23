@@ -2,6 +2,7 @@
 .env.*
 !.env.example
 bin/
+data/
 tmp/
 coverage.out
 *.log

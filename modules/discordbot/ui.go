@@ -217,6 +217,44 @@ func slashCommands() []*discordgo.ApplicationCommand {
 	return out
 }
 
+func closeConfirm(rec ticket.Record) *discordgo.InteractionResponseData {
+	ready := rec.Resolution != nil && ticket.CanTransition(rec.Type, rec.Workflow, rec.Status, "closed")
+	note := "A saved resolution note is required. Use /ticket-resolution first."
+	if rec.Resolution != nil {
+		note = rec.Resolution.Text
+	}
+	return &discordgo.InteractionResponseData{
+		Content: "Close ticket **" + rec.ID + "**? Confirm archives the thread. Cancel keeps it unchanged.",
+		Embeds:  []*discordgo.MessageEmbed{{Title: "Resolution (member-visible)", Description: note, Color: 0x4A2FBD}},
+		Components: []discordgo.MessageComponent{
+			discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+				discordgo.Button{CustomID: "ticket:confirmclose:" + rec.ID, Label: "Confirm close", Style: discordgo.DangerButton, Disabled: !ready},
+				discordgo.Button{CustomID: "ticket:cancelclose:" + rec.ID, Label: "Cancel", Style: discordgo.SecondaryButton},
+			}},
+		},
+		AllowedMentions: &discordgo.MessageAllowedMentions{},
+	}
+}
+
+func paidConfirm(rec ticket.Record, reference string) *discordgo.InteractionResponseData {
+	ready := ticket.IsWithdrawal(rec.Type, rec.Workflow) && rec.Status == "approved" && rec.Withdrawal != nil
+	desc := "This request is not ready for payment confirmation."
+	if ready {
+		desc = "Ticket: " + rec.ID + "\nAmount: **" + ticket.FormatAmount(rec.Withdrawal.AmountMinor, rec.Withdrawal.Currency) + " " + rec.Withdrawal.Currency + "**\nSale: " + rec.Withdrawal.SaleReference + "\nReference: " + reference
+	}
+	return &discordgo.InteractionResponseData{
+		Content: "Confirm only if the external payment already succeeded. This records an outgoing transaction; it does not transfer money. Expires in 120 seconds.",
+		Embeds:  []*discordgo.MessageEmbed{{Title: "Confirm external withdrawal payment", Description: desc, Color: 0xE67E22}},
+		Components: []discordgo.MessageComponent{
+			discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+				discordgo.Button{CustomID: "ticket:confirmpaid:" + rec.ID, Label: "Confirm payment recorded", Style: discordgo.DangerButton, Disabled: !ready},
+				discordgo.Button{CustomID: "ticket:cancelpaid:" + rec.ID, Label: "Cancel", Style: discordgo.SecondaryButton},
+			}},
+		},
+		AllowedMentions: &discordgo.MessageAllowedMentions{},
+	}
+}
+
 func formatQueue(recs []ticket.Record) string {
 	if len(recs) == 0 {
 		return "Queue is empty."

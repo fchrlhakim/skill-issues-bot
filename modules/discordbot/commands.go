@@ -25,6 +25,7 @@ var Commands = []Command{
 	{Name: "mutasi", Description: "View only your own admin-confirmed outgoing records"},
 	{Name: "seller-approve", Description: "Approve this seller application and grant Seller (admin only)", AdminOnly: true},
 	{Name: "withdraw-paid", Description: "Record an already completed external withdrawal payment (admin only)", AdminOnly: true},
+	{Name: "rolesync", Description: "Create missing launch roles (admin only, never deletes)", AdminOnly: true},
 }
 
 const SafetyCopy = "Admins never ask for passwords, OTP, PIN, CVV, full card numbers, API keys, private keys, or seed phrases. " +

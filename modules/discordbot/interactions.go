@@ -67,7 +67,7 @@ func (b *Bot) onInteraction(s *discordgo.Session, i *discordgo.InteractionCreate
 
 func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate, actor ticket.Actor, admin bool) {
 	name := i.ApplicationCommandData().Name
-	adminOnly := map[string]bool{"panel": true, "rolepanel": true, "verifypanel": true, "testwelcome": true, "lookup": true, "tickets": true, "ticket-handoff": true, "ticket-resolution": true, "seller-approve": true, "withdraw-paid": true}
+	adminOnly := map[string]bool{"panel": true, "rolepanel": true, "verifypanel": true, "testwelcome": true, "lookup": true, "tickets": true, "ticket-handoff": true, "ticket-resolution": true, "seller-approve": true, "withdraw-paid": true, "rolesync": true}
 	if adminOnly[name] && !admin {
 		b.edit(s, i, "Admin only.", nil, nil)
 		return
@@ -87,6 +87,13 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 		return ""
 	}
 	switch name {
+	case "rolesync":
+		n, err := b.syncLaunchRoles(s)
+		if err != nil {
+			b.edit(s, i, err.Error(), nil, nil)
+			return
+		}
+		b.edit(s, i, "Launch roles synced. Created "+itoa(n)+" missing roles. Nothing was deleted.", nil, nil)
 	case "panel":
 		_, _ = s.ChannelMessageSendComplex(i.ChannelID, &discordgo.MessageSend{Embeds: ticketPanel().Embeds, Components: ticketPanel().Components})
 		b.edit(s, i, "Panel posted.", nil, nil)
@@ -166,8 +173,16 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 			}
 			b.replyRecord(s, i, next, err)
 		case "withdraw-paid":
-			next, err := b.tickets.RecordPayment(ctx, actor, rec.ID, option("reference"))
-			b.replyRecord(s, i, next, err)
+			prompt := paidConfirm(rec, option("reference"))
+			msg, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+				Content: prompt.Content, Embeds: prompt.Embeds, Components: prompt.Components, Flags: discordgo.MessageFlagsEphemeral,
+			})
+			if err != nil || msg == nil {
+				b.edit(s, i, "Payment not saved. Confirmation could not be posted.", nil, nil)
+				return
+			}
+			b.putConfirm(confirmKey(actor.ID, rec.ID), pendingConfirm{Kind: "paid", TicketID: rec.ID, ActorID: actor.ID, MessageID: msg.ID, Reference: option("reference"), Expires: time.Now().Add(confirmTTL)})
+			return
 		}
 	default:
 		b.edit(s, i, "Unknown command.", nil, nil)
@@ -241,6 +256,25 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 		b.edit(s, i, "You opened this ticket. Another admin must handle your case.", nil, nil)
 		return
 	}
+	if action == "confirmclose" || action == "cancelclose" || action == "confirmpaid" || action == "cancelpaid" {
+		prompt, ok := b.takeConfirm(confirmKey(actor.ID, rec.ID), i.Message.ID)
+		if !ok {
+			b.edit(s, i, "This confirmation is no longer current. Use the latest prompt.", nil, nil)
+			return
+		}
+		if action == "cancelclose" || action == "cancelpaid" {
+			b.edit(s, i, "Cancelled. The ticket is unchanged.", nil, nil)
+			return
+		}
+		if action == "confirmclose" {
+			next, err := b.tickets.Transition(ctx, actor, rec.ID, "closed")
+			b.replyRecord(s, i, next, err)
+			return
+		}
+		next, err := b.tickets.RecordPayment(ctx, actor, rec.ID, prompt.Reference)
+		b.replyRecord(s, i, next, err)
+		return
+	}
 	switch action {
 	case "claim":
 		next, err := b.tickets.Claim(ctx, actor, rec.ID)
@@ -280,8 +314,16 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 		next, err := b.tickets.Transition(ctx, actor, rec.ID, to)
 		b.replyRecord(s, i, next, err)
 	case "close":
-		next, err := b.tickets.Transition(ctx, actor, rec.ID, "closed")
-		b.replyRecord(s, i, next, err)
+		prompt := closeConfirm(rec)
+		msg, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+			Content: prompt.Content, Embeds: prompt.Embeds, Components: prompt.Components, Flags: discordgo.MessageFlagsEphemeral,
+		})
+		if err != nil || msg == nil {
+			b.edit(s, i, "Close confirmation could not be posted.", nil, nil)
+			return
+		}
+		b.putConfirm(confirmKey(actor.ID, rec.ID), pendingConfirm{Kind: "close", TicketID: rec.ID, ActorID: actor.ID, MessageID: msg.ID, Expires: time.Now().Add(confirmTTL)})
+		return
 	default:
 		b.edit(s, i, "That control is no longer active.", nil, nil)
 	}
