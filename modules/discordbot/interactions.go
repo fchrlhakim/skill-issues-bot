@@ -67,7 +67,7 @@ func (b *Bot) onInteraction(s *discordgo.Session, i *discordgo.InteractionCreate
 
 func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate, actor ticket.Actor, admin bool) {
 	name := i.ApplicationCommandData().Name
-	adminOnly := map[string]bool{"panel": true, "rolepanel": true, "verifypanel": true, "testwelcome": true, "lookup": true, "tickets": true, "ticket-handoff": true, "ticket-resolution": true, "seller-approve": true, "withdraw-paid": true, "rolesync": true}
+	adminOnly := map[string]bool{"panel": true, "rolepanel": true, "verifypanel": true, "testwelcome": true, "lookup": true, "tickets": true, "ticket-handoff": true, "ticket-resolution": true, "seller-approve": true, "withdraw-paid": true, "rolesync": true, "guildsync": true}
 	if adminOnly[name] && !admin {
 		b.edit(s, i, "Admin only.", nil, nil)
 		return
@@ -87,6 +87,13 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 		return ""
 	}
 	switch name {
+	case "guildsync":
+		cats, chans, err := b.syncLaunchGuild(s)
+		if err != nil {
+			b.edit(s, i, err.Error(), nil, nil)
+			return
+		}
+		b.edit(s, i, "Guild layout synced. Created "+itoa(cats)+" categories and "+itoa(chans)+" channels. Nothing was deleted or overwritten.", nil, nil)
 	case "rolesync":
 		n, err := b.syncLaunchRoles(s)
 		if err != nil {
