@@ -25,6 +25,9 @@
 - `health`: `health.NewRepository` -> `health.NewService` -> `health.NewHttp`.
 - `audit-log`: `auditLog.NewRepository` -> `auditLog.NewService` -> `auditLog.NewHttp`.
 - `upload`: `upload.NewRepository` + `storage.NewLocalStorage` -> `upload.NewService` -> `upload.NewHttp`.
+- `ticket`: `ticket.NewRepository` -> `ticket.NewService` -> `ticket.NewHttp`.
+- `membership`: `membership.NewRepository` -> `membership.NewService` -> `membership.NewHttp`.
+- `discordbot`: not constructed in `boot`. `main.go` calls `discordbot.New` with `HandlerSetup.TicketService` and `HandlerSetup.MembershipService` when both Discord env vars are set.
 
 ## Gotchas
 - Do not create global singletons for DB, Redis, token service, validator, or logger.

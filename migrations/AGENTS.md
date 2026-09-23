@@ -21,13 +21,17 @@ Migrations define the production database contract for PostgreSQL. They must be 
 - `dead_letter_events`: failed async event storage.
 - `uploaded_files`: upload metadata.
 - `audit_logs`: access/resource audit trail.
+- `guild_members` — one row per Discord id, `tier`, `restricted`.
+- `ticket_counters` — single sequence row.
+- `tickets` — marketplace tickets, unique `public_id` and `thread_id`.
+- `outgoing_mutations` — confirmed withdrawal payments, unique `reference`, `amount_minor > 0`.
 
 ## Required Checks Before Changing Schema
 ```bash
 go test ./...
 go vet ./...
-test -f migrations/000001_create_users.up.sql
-test -f migrations/000001_create_users.down.sql
+test -f migrations/postgres/000001_create_users.up.sql
+test -f migrations/postgres/000002_discord_marketplace.up.sql
 ```
 
 ## Common Gotchas

@@ -2,6 +2,7 @@
 
 ## Module Identity
 Feature modules implement application/domain behavior. Every real module should follow the `gin-be-dashnet-app` pattern: `handler.go`, `service.go`, `repository.go`.
+Ticket and membership rules stay in those packages; `discordbot` is the gateway adapter and calls the ticket and membership services.
 
 ## Required Pattern
 ```text

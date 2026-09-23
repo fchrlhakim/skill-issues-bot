@@ -35,6 +35,7 @@ Keep global middleware intentional:
 - Health checks may be public.
 - Auth register/login/refresh/logout may be public but must stay rate-limited.
 - Metrics are enabled only by config and should be protected upstream in production deployments.
+- `/tickets` and `/membership` are JWT groups with limiter prefixes `ticket` and `membership` (`router/router.go`). Do not list them as public.
 
 ## Gotchas
 - Middleware order changes can affect audit logs, metrics labels, response headers, and auth behavior.

@@ -1,9 +1,11 @@
-# Go Starter Kit Agent Guide
+# Skill Issues Bot Agent Guide
 
 ## Project Snapshot
-Production-oriented Go backend starter kit based on the `gin-be-dashnet-app` structure. It uses Gin, GORM/PostgreSQL, Redis-ready limiter/cache, JWT v5, bcrypt, Prometheus metrics, audit logs, outbox worker skeleton, and module-based `handler -> service -> repository` layering.
 
-This project is intentionally domain-neutral. For any new application, add domain code under `modules/<domain>/` and keep infrastructure reusable.
+- This repo is the Skill Issues Discord marketplace bot: Gin HTTP plus a discordgo gateway. Domain code is `modules/ticket`, `modules/membership`, and `modules/discordbot`. `infrastructure/` stays free of those domain rules.
+- The bot calls skill-issues-saas in exactly one place: an optional, read-only `GET` of the SaaS admin finance overview, used by `/revenue` (`SAAS_REVENUE_URL`, `SAAS_REVENUE_TOKEN` in `modules/discordbot/bot.go`). Keep it read-only and optional: with either variable empty, `/revenue` must report `SaaS revenue: unavailable` rather than fail. Never share a database with the SaaS. Do not add a client to skill-issues-proxy, and do not widen this into writes, shared secrets, or a shared store.
+- Two other Discord features exist in the SaaS repo (`sellerkyc`, `identity`) and do not share `guild_members`. Do not treat them as this bot's store.
+- Gateway: `modules/discordbot`. Business rules for tickets and withdrawals: `modules/ticket` (`catalog.go`, `workflow.go`, `withdrawal.go`, `safety.go`). Tiers: `modules/membership`. HTTP wiring: `boot/boot.go`, `router/router.go`. Product overview for humans: `README.md`. Deploy: `DEPLOY.md`.
 
 ## Non-Negotiable Rules
 - Preserve the existing architecture: `main.go`, `boot/`, `router/`, `infrastructure/`, `modules/`, `modules/primitive/`, `utils/`, `migrations/`.
@@ -16,6 +18,9 @@ This project is intentionally domain-neutral. For any new application, add domai
 - Do not use raw dynamic SQL identifiers. Sort/filter identifiers must be allowlisted.
 - Do not weaken security defaults to make local development easier.
 - You may change code only when it follows the established pattern or is a clear production best-practice improvement.
+- Do not let the bot transfer funds, mint a balance, or mark a withdrawal `paid` except through `RecordWithdrawalPayment` / `/withdraw-paid`.
+- Discord command visibility is not authorization. Admin slash commands recheck `IsTicketAdmin`.
+- `/rolesync` and `/guildsync` create missing launch objects only. Do not make them delete or overwrite.
 
 ## Root Commands
 ```bash
@@ -59,6 +64,9 @@ go vet ./...
 - Module contracts: `modules/*/handler.go`, `modules/*/service.go`, `modules/*/repository.go`
 - Shared DTO/model/constants: `modules/primitive/`
 - Migrations: `migrations/*.sql`
+- Discord gateway: `modules/discordbot/`
+- Ticket rules: `modules/ticket/`
+- Membership tiers: `modules/membership/`
 
 ## Quick Find
 ```bash
