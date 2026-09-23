@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go mod download
+      - run: go test ./...
+      - run: go vet ./...
+      - run: go build ./...
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+      - run: govulncheck ./...
+      - run: go install github.com/securego/gosec/v2/cmd/gosec@v2.26.1
+      - run: gosec ./...
+      - uses: gitleaks/gitleaks-action@v2
+      - run: test -f migrations/000001_create_users.up.sql && test -f migrations/000001_create_users.down.sql

@@ -1,0 +1,31 @@
+package ticket
+
+import "errors"
+
+var (
+	ErrUnknownType       = errors.New("unknown ticket type")
+	ErrUnknownWorkflow   = errors.New("ticket workflow needs admin review")
+	ErrInvalidForm       = errors.New("ticket form could not be read")
+	ErrRequiredField     = errors.New("complete this required field")
+	ErrInvalidRegion     = errors.New("choose a supported country / region code")
+	ErrSensitive         = errors.New("form appears to contain sensitive data")
+	ErrTextEmpty         = errors.New("text is empty")
+	ErrTextLength        = errors.New("text exceeds the allowed length")
+	ErrDuplicateType     = errors.New("a non-closed ticket of this type already exists")
+	ErrOpenLimit         = errors.New("limit of 3 non-closed tickets reached")
+	ErrNotEligible       = errors.New("current membership is not eligible for this ticket type")
+	ErrNoAdmin           = errors.New("no other human server admin is available")
+	ErrNotFound          = errors.New("ticket not found")
+	ErrNotAdmin          = errors.New("administrator permission is required")
+	ErrOpenerRecusal     = errors.New("you cannot handle your own ticket")
+	ErrIllegalTransition = errors.New("illegal status transition")
+	ErrAlreadyClaimed    = errors.New("ticket is already claimed")
+	ErrResolutionMissing = errors.New("save a member-visible resolution note before closing")
+	ErrWithdrawalInvalid = errors.New("withdrawal record is invalid")
+	ErrNotApproved       = errors.New("only an approved withdrawal can record payment")
+	ErrDuplicatePayment  = errors.New("payment reference already recorded")
+	ErrAlreadyPaid       = errors.New("this withdrawal already has an outgoing payment record")
+	ErrSellerTicket      = errors.New("use seller-approve only on a seller verification ticket")
+	ErrAlreadyApproved   = errors.New("seller approval is already recorded")
+	ErrHandoffTarget     = errors.New("handoff target must be another current human admin")
+)
