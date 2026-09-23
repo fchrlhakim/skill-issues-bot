@@ -23,6 +23,9 @@ certs/
 *.pem
 *.key
 
+# Rotated SaaS credential chain — a live secret, never commit it
+storage/saas-token.json
+
 # Tooling & Agent artifacts (machine-specific, never commit)
 .codegraph/
 .serena/

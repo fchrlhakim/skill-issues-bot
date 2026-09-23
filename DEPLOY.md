@@ -37,9 +37,18 @@ Fill:
 | `DISCORD_GUILD_ID` | server ID |
 | `GHCR_PULL_TOKEN` | optional; CD falls back to the run token |
 | `SAAS_REVENUE_URL` | optional; enables `/revenue`. Use `http://skill-issues-saas-be:8080/api/v1/admin/reports/finance-overview` |
-| `SAAS_REVENUE_TOKEN` | optional; SaaS admin access token for the URL above. Leave both empty to keep `/revenue` at `SaaS revenue: unavailable` |
+| `SAAS_REFRESH_TOKEN` | optional; preferred credential. The bot rotates it against `/api/v1/auth/refresh` and persists the chain under `storage/saas-token.json`, so `/revenue` survives the 15-minute access-token lifetime |
+| `SAAS_REVENUE_TOKEN` | optional fallback; a static access token. It expires in 15 minutes and is never renewed. Leave the credential vars empty to keep `/revenue` at `SaaS revenue: unavailable` |
 
 Enable **Server Members Intent** on the Discord application.
+
+To enable `/revenue`, bootstrap the credential once: create an admin session in the
+SaaS database and a matching `refresh_tokens` row whose `token_hash` is the SHA-256
+hex of the refresh JWT, then put that refresh JWT in `SAAS_REFRESH_TOKEN`. The bot
+rotates it on startup and stores the replacement in `storage/saas-token.json`; the
+stored chain outranks the environment, so the environment value is only read on the
+very first start. Never present a refresh token twice — the SaaS revokes the whole
+token family on reuse, which requires a fresh bootstrap.
 
 ## 2. GitHub secrets (Actions)
 

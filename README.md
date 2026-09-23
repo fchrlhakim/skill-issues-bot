@@ -2,7 +2,7 @@
 
 This repository is a standalone Discord marketplace for one guild. Business rules are in Go (`modules/ticket`, `modules/membership`, `modules/discordbot`), ported from `skillissue-discord`. The process uses its own Postgres database and its own JWT, and serves HTTP on the process port. Production publishes that HTTP only on `127.0.0.1:18102`. Discord traffic is an outbound gateway only. There is no public hostname.
 
-The bot makes exactly one outbound call to another Skill Issues service: an optional, read-only `GET` of the SaaS admin finance overview, used by `/revenue` (`SAAS_REVENUE_URL`, `SAAS_REVENUE_TOKEN`). It writes nothing to the SaaS, and the two share no database. There is no client to skill-issues-proxy.
+The bot makes exactly one outbound call to another Skill Issues service: an optional, read-only `GET` of the SaaS admin finance overview, used by `/revenue`. It authenticates with a refresh token (`SAAS_REFRESH_TOKEN`) that it rotates against the SaaS and persists under `storage/`, so the command keeps working past the 15-minute access-token lifetime. It writes nothing to the SaaS, and the two share no database. There is no client to skill-issues-proxy.
 
 ## What it does
 

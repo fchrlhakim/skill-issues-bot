@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"sort"
@@ -36,7 +37,7 @@ type Bot struct {
 	reminderAt  time.Time
 	revenue     *http.Client
 	revenueURL  string
-	revenueAuth string
+	saas        *saasToken
 }
 
 func New(token, guildID string, tickets ticket.ServiceInterface, members membership.ServiceInterface, log *logrus.Logger) (*Bot, error) {
@@ -45,7 +46,9 @@ func New(token, guildID string, tickets ticket.ServiceInterface, members members
 		return nil, err
 	}
 	session.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMembers
-	bot := &Bot{session: session, guildID: guildID, tickets: tickets, members: members, log: log, channelIDs: map[string]string{}, stop: make(chan struct{}), confirms: map[string]pendingConfirm{}, revenue: &http.Client{Timeout: 5 * time.Second}, revenueURL: os.Getenv("SAAS_REVENUE_URL"), revenueAuth: os.Getenv("SAAS_REVENUE_TOKEN")}
+	revenueURL := os.Getenv("SAAS_REVENUE_URL")
+	revenueClient := &http.Client{Timeout: 5 * time.Second}
+	bot := &Bot{session: session, guildID: guildID, tickets: tickets, members: members, log: log, channelIDs: map[string]string{}, stop: make(chan struct{}), confirms: map[string]pendingConfirm{}, revenue: revenueClient, revenueURL: revenueURL, saas: newSaaSToken(saasAuthURL(revenueURL), os.Getenv("SAAS_REVENUE_TOKEN"), os.Getenv("SAAS_REFRESH_TOKEN"), saasTokenFile(), revenueClient)}
 	session.AddHandler(bot.onReady)
 	session.AddHandler(bot.onInteraction)
 	session.AddHandler(bot.onJoin)
@@ -60,6 +63,11 @@ func (b *Bot) Open() error {
 	}
 	b.writerLock = lease
 	writeHeartbeat("data")
+	// Rotate before serving, so the persisted chain — not a possibly stale
+	// environment value — is the credential in play. Rotating lazily would let
+	// the two drift, and a restart would then replay a rotated-away token and
+	// revoke the whole family.
+	b.primeSaaSToken()
 	if err := b.session.Open(); err != nil {
 		lease.release()
 		return err
@@ -70,6 +78,20 @@ func (b *Bot) Open() error {
 	}
 	b.startReminder()
 	return nil
+}
+
+// primeSaaSToken rotates the SaaS credential once at startup. A failure is
+// logged, not fatal: the gateway must still come up, and /revenue degrades to
+// "unavailable" on its own.
+func (b *Bot) primeSaaSToken() {
+	if b.saas == nil || !b.saas.canRotate() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if _, err := b.saas.Access(ctx); err != nil {
+		b.log.WithError(err).Warn("could not prime the saas credential; /revenue may be unavailable")
+	}
 }
 
 func (b *Bot) Close() error {
@@ -221,32 +243,66 @@ type saasFinance struct {
 }
 
 func (b *Bot) saasRevenue(ctx context.Context) (string, error) {
-	if b.revenueURL == "" || b.revenueAuth == "" {
+	if b.revenueURL == "" || b.saas == nil {
 		return "", fmt.Errorf("not configured")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.revenueURL, nil)
+	body, err := b.saasGet(ctx)
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+b.revenueAuth)
-	res, err := b.revenue.Do(req)
-	if err != nil {
+	var payload saasFinance
+	if err := json.Unmarshal(body, &payload); err != nil {
 		return "", err
 	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("status %d from %s", res.StatusCode, b.revenueURL)
-	}
-	var body saasFinance
-	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
-		return "", err
-	}
-	summary := body.Data.Summary
+	summary := payload.Data.Summary
 	return strings.Join([]string{
 		"SaaS platform fee today: " + nanoUSD(summary.TodayFee) + " (" + itoa64(summary.TodayCount) + " requests)",
 		"SaaS platform fee this month: " + nanoUSD(summary.MonthFee) + " (" + itoa64(summary.MonthCount) + " requests)",
 		"SaaS platform fee all time: " + nanoUSD(summary.AllFee) + " (" + itoa64(summary.AllCount) + " requests)",
 	}, "\n"), nil
+}
+
+// saasGet fetches the finance overview, rotating once if the cached access token
+// was rejected. A 401 is the only signal that the token died early, so the retry
+// is deliberately narrow: a second failure is reported, not looped on.
+func (b *Bot) saasGet(ctx context.Context) ([]byte, error) {
+	for attempt := 0; ; attempt++ {
+		token, err := b.saas.Access(ctx)
+		if err != nil {
+			return nil, err
+		}
+		body, status, err := b.saasFetch(ctx, token)
+		if err != nil {
+			return nil, err
+		}
+		if status == http.StatusOK {
+			return body, nil
+		}
+		if status == http.StatusUnauthorized && attempt == 0 && b.saas.canRotate() {
+			b.log.Warn("saas revenue token rejected; rotating once")
+			b.saas.Invalidate()
+			continue
+		}
+		return nil, fmt.Errorf("status %d from %s", status, b.revenueURL)
+	}
+}
+
+func (b *Bot) saasFetch(ctx context.Context, token string) ([]byte, int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, b.revenueURL, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	res, err := b.revenue.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, 0, err
+	}
+	return body, res.StatusCode, nil
 }
 
 func nanoUSD(value string) string {
