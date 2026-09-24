@@ -66,21 +66,21 @@ func (b *Bot) reconcileTiers(ctx context.Context) (int, int, error) {
 			continue
 		}
 		row, known := byID[m.User.ID]
+		restricted := membership.Restricted(names)
 		// A member with no tier role is "none". Recording that only matters if
 		// a row already exists: leaving the old tier there would report someone
 		// as a Buyer after their role was taken away. Members who never had a
 		// row are skipped, so the table does not grow to hold every lurker.
 		if tier == membership.TierNone {
-			if !known || row.Tier == membership.TierNone {
+			if !known || (row.Tier == membership.TierNone && row.Restricted == restricted) {
 				continue
 			}
-			if _, err := b.members.Upsert(ctx, m.User.ID, row.Username, membership.TierNone, row.AccountAgeDays, false); err != nil {
+			if _, err := b.members.Upsert(ctx, m.User.ID, row.Username, membership.TierNone, row.AccountAgeDays, restricted); err != nil {
 				return repaired, 0, err
 			}
 			repaired++
 			continue
 		}
-		restricted := membership.Restricted(names)
 		age := row.AccountAgeDays
 		if !known {
 			age = accountAgeDays(m.User)
