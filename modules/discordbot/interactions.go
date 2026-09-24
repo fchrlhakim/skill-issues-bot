@@ -151,15 +151,14 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 		}
 		b.edit(s, i, strings.Join(lines, "\n"), nil, nil)
 	case "memberpanel":
-		counts, neither, err := b.liveTierCounts()
+		// Posts once, then keeps editing that same message, so the counts in the
+		// channel are always the live ones and no stale copy is left behind.
+		note, err := b.publishMemberPanel(ctx)
 		if err != nil {
-			b.edit(s, i, "Could not read the member list: "+err.Error(), nil, nil)
+			b.edit(s, i, "Could not publish the member panel: "+err.Error(), nil, nil)
 			return
 		}
-		_, _ = s.ChannelMessageSendComplex(i.ChannelID, &discordgo.MessageSend{
-			Embeds: memberPanel(counts, neither).Embeds, AllowedMentions: &discordgo.MessageAllowedMentions{},
-		})
-		b.edit(s, i, "Panel posted.", nil, nil)
+		b.edit(s, i, note, nil, nil)
 	case "areapanel":
 		side := option("side")
 		if side != membership.TierSeller && side != membership.TierBuyer {
@@ -177,6 +176,7 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 			b.edit(s, i, "Sync failed: "+err.Error(), nil, nil)
 			return
 		}
+		b.refreshMemberPanel(ctx)
 		b.edit(s, i, b.reconcileSummary(repaired, pruned), nil, nil)
 	case "server":
 		b.edit(s, i, b.serverSnapshot(ctx, s), nil, nil)
@@ -225,6 +225,8 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 				// silent failure here is a real divergence between the two stores.
 				if tierErr := b.setTier(s, rec.OpenerID, membership.TierSeller, ""); tierErr != nil && b.log != nil {
 					b.log.WithError(tierErr).WithField("discord_id", rec.OpenerID).Warn("seller approved but the Seller role or the stored tier did not update")
+				} else {
+					b.refreshMemberPanel(ctx)
 				}
 			}
 			b.replyRecord(s, i, next, err)
@@ -294,6 +296,7 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 			// Say exactly what changed and what did not. A new member has no way
 			// to tell whether they are a Buyer or a Seller, and the two areas
 			// look identical until one of them opens.
+			b.refreshMemberPanel(ctx)
 			b.edit(s, i, "You are now a **Buyer**. The Buyer Area is open to you; "+
 				"the Seller Area stays hidden until an admin approves a seller application.", nil, nil)
 			return

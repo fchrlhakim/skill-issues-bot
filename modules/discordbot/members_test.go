@@ -1,7 +1,11 @@
 package discordbot
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"go-starter-kit/modules/membership"
 
@@ -64,10 +68,56 @@ func TestMemberPanelRendersBothTiersAndCounts(t *testing.T) {
 	for _, f := range p.Embeds[0].Fields {
 		body += f.Name + "|" + f.Value + "\n"
 	}
-	for _, want := range []string{"4 member(s)", "2 member(s)", "9 member(s)"} {
-		if !contains(body, want) {
+	for _, want := range []string{"Buyers — 4", "Sellers — 2", "No role yet — 9"} {
+		if !strings.Contains(body, want) {
 			t.Fatalf("panel missing %q in:\n%s", want, body)
 		}
+	}
+}
+
+// A zero count must still render. Omitting the line would leave a reader unable
+// to tell "no sellers" from "the count was not reported".
+func TestMemberPanelRendersZeroCounts(t *testing.T) {
+	p := memberPanel(map[string]int{membership.TierBuyer: 0, membership.TierSeller: 0}, 0)
+	body := ""
+	for _, f := range p.Embeds[0].Fields {
+		body += f.Name + "\n"
+	}
+	for _, want := range []string{"Buyers — 0", "Sellers — 0", "No role yet — 0"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("panel missing %q in:\n%s", want, body)
+		}
+	}
+}
+
+// The panel is edited in place, so its location has to survive a restart. If
+// this round trip fails the bot posts a NEW panel on every refresh and the
+// channel fills with stale counts.
+func TestPanelStateRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("MEMBER_PANEL_FILE", filepath.Join(dir, "member-panel.json"))
+
+	if _, ok := loadPanelState(); ok {
+		t.Fatal("empty file should report no panel")
+	}
+	want := panelState{ChannelID: "c1", MessageID: "m1", UpdatedAt: time.Now().UTC().Truncate(time.Second)}
+	if err := savePanelState(want); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, ok := loadPanelState()
+	if !ok {
+		t.Fatal("saved panel not found")
+	}
+	if got.ChannelID != want.ChannelID || got.MessageID != want.MessageID {
+		t.Fatalf("got %+v want %+v", got, want)
+	}
+	// A half-written file must not be treated as a valid panel, or the bot would
+	// try to edit a message id it never posted.
+	if err := os.WriteFile(os.Getenv("MEMBER_PANEL_FILE"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := loadPanelState(); ok {
+		t.Fatal("corrupt state must not report a panel")
 	}
 }
 

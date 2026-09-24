@@ -2,7 +2,12 @@ package discordbot
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"go-starter-kit/modules/membership"
 	"go-starter-kit/modules/primitive"
@@ -225,4 +230,100 @@ func tierLabel(roles []string) string {
 
 func (b *Bot) reconcileSummary(repaired, pruned int) string {
 	return fmt.Sprintf("Tier sync complete. Repaired %d stored tier(s), pruned %d row(s) for members who left.", repaired, pruned)
+}
+
+// panelFile is where the id of the live member panel is kept. Without it the
+// bot cannot edit its own message, so every refresh would post a new one and
+// the channel would fill with stale counts.
+func panelFile() string {
+	if override := strings.TrimSpace(os.Getenv("MEMBER_PANEL_FILE")); override != "" {
+		return override
+	}
+	return filepath.Join("storage", "member-panel.json")
+}
+
+type panelState struct {
+	ChannelID string    `json:"channel_id"`
+	MessageID string    `json:"message_id"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func loadPanelState() (panelState, bool) {
+	raw, err := os.ReadFile(panelFile())
+	if err != nil {
+		return panelState{}, false
+	}
+	var st panelState
+	if err := json.Unmarshal(raw, &st); err != nil || st.ChannelID == "" || st.MessageID == "" {
+		return panelState{}, false
+	}
+	return st, true
+}
+
+func savePanelState(st panelState) error {
+	file := panelFile()
+	if dir := filepath.Dir(file); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+	}
+	raw, err := json.Marshal(st)
+	if err != nil {
+		return err
+	}
+	tmp := file + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, file)
+}
+
+// publishMemberPanel posts the panel if none exists, and otherwise edits the
+// message it posted before. Editing is what keeps a single live panel: posting
+// again on every refresh would leave a column of stale counts behind.
+func (b *Bot) publishMemberPanel(ctx context.Context) (string, error) {
+	counts, neither, err := b.liveTierCounts()
+	if err != nil {
+		return "", err
+	}
+	panel := memberPanel(counts, neither)
+	edit := &discordgo.MessageEdit{
+		Embeds:     &panel.Embeds,
+		Components: &panel.Components,
+	}
+	if st, ok := loadPanelState(); ok {
+		edit.ID = st.MessageID
+		edit.Channel = st.ChannelID
+		if _, err := b.session.ChannelMessageEditComplex(edit); err == nil {
+			st.UpdatedAt = time.Now().UTC()
+			_ = savePanelState(st)
+			return "Member panel updated.", nil
+		}
+		// The message was deleted or the channel changed; fall through and post
+		// a fresh one so the counts stay visible.
+	}
+	msg, err := b.session.ChannelMessageSendComplex(b.channel("verification"), &discordgo.MessageSend{
+		Embeds:          panel.Embeds,
+		Components:      panel.Components,
+		AllowedMentions: &discordgo.MessageAllowedMentions{},
+	})
+	if err != nil {
+		return "", err
+	}
+	if err := savePanelState(panelState{ChannelID: msg.ChannelID, MessageID: msg.ID, UpdatedAt: time.Now().UTC()}); err != nil {
+		return "", err
+	}
+	return "Member panel posted.", nil
+}
+
+// refreshMemberPanel repaints the counts after something changed the roles. It
+// is deliberately silent when no panel has been posted yet: a server that never
+// ran /memberpanel should not have one appear on its own.
+func (b *Bot) refreshMemberPanel(ctx context.Context) {
+	if _, ok := loadPanelState(); !ok {
+		return
+	}
+	if _, err := b.publishMemberPanel(ctx); err != nil && b.log != nil {
+		b.log.WithError(err).Warn("could not refresh the member panel")
+	}
 }
