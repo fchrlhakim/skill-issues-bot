@@ -17,6 +17,9 @@
 - Do not add public static file serving for uploads.
 - Do not use raw dynamic SQL identifiers. Sort/filter identifiers must be allowlisted.
 - Do not weaken security defaults to make local development easier.
+- Operator-only surfaces (`GET /user`, `GET /audit-logs`, and the whole `/tickets` and `/membership` groups) require the caller's id in `OPERATOR_USER_IDS` and fail closed when it is unset. Do not widen them to any JWT. Mount the gate with `middleware.OperatorMiddleware()` on the group, not per handler.
+- Never derive caller privilege from request data. `is_admin`, `roles`, `owner_id`, `discord_id` and `available_admins` arrive in the body/query and are claims, not facts; the HTTP ticket and membership surfaces exist for an operator to inspect, and the Discord bot calls the service in-process. A handler that trusts those fields is an authentication bypass.
+- Never read `X-Forwarded-For` directly. `clientKey` uses `c.ClientIP()`, which honours `TRUSTED_PROXIES`; reading the header would let a caller pick its own rate-limit bucket.
 - You may change code only when it follows the established pattern or is a clear production best-practice improvement.
 - Do not let the bot transfer funds, mint a balance, or mark a withdrawal `paid` except through `RecordWithdrawalPayment` / `/withdraw-paid`.
 - Discord command visibility is not authorization. Admin slash commands recheck `IsTicketAdmin`.

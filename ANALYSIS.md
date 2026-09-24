@@ -43,8 +43,11 @@ variable empty, the command degrades to `SaaS revenue: unavailable`.
   `/withdraw-paid` records one *already completed* external payment.
   `ApproveWithdrawal` requires `IsWithdrawal(type, workflow)`, status `open`,
   no prior approval, and an actor that is **not the opener** (`actorTimeOK`), with an
-  RFC3339-millisecond timestamp. `RecordWithdrawalPayment` additionally cross-checks
-  `others []Record` for a duplicate reference — so the same sale cannot be paid twice.
+  RFC3339-millisecond timestamp. `RecordWithdrawalPayment` cross-checks the
+  tickets loaded for the call, and `RecordPayment` then consults the durable
+  `outgoing_mutations.reference` (unique index, `OutgoingExists`) — so the same
+  sale cannot be paid twice. The ticket state and the ledger row are written in
+  one transaction (`Repository.SavePayment`).
 - Money uses **minor units** (`amountMinor int64`), with `ZeroDecimalCurrencies`
   for JPY/KRW/VND. No floats.
 
@@ -70,7 +73,9 @@ the same defect class that already bit this codebase elsewhere.
 - Needs `DB_PASSWORD`, `JWT_SECRET` (≥32), `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID`,
   and optional `GHCR_PULL_TOKEN`.
 - Migrations `000001_create_users`, `000002_discord_marketplace` (guild_members,
-  tickets, ticket_counters). Postgres + MySQL variants both shipped.
+ticket_counters, tickets, outgoing_mutations). Only Postgres is complete: the
+`migrations/mysql/` directory stops at `000001`, and production applies
+`migrations/postgres` (`deploy/be-entrypoint.sh`).
 
 ## Discord portal requirements — differs from what I told you earlier
 

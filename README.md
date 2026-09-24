@@ -92,6 +92,7 @@ Discord visibility is not authorization. Handlers recheck admin in the `handleCo
 | `mutasi` | no | View only your own admin-confirmed outgoing records |
 | `seller-approve` | yes | Approve this seller application and grant Seller (admin only) |
 | `withdraw-paid` | yes | Record an already completed external withdrawal payment (admin only) |
+| `automodsync` | yes | Create missing launch AutoMod safety rules (admin only, never edits or deletes) |
 | `rolesync` | yes | Create missing launch roles (admin only, never deletes) |
 | `guildsync` | yes | Create missing launch categories and channels (admin only, never deletes) |
 | `server` | yes | Show member and ticket counts for this server (admin only) |
@@ -101,6 +102,7 @@ Discord visibility is not authorization. Handlers recheck admin in the `handleCo
 
 - `/rolesync` calls `syncLaunchRoles`. It creates missing names from `launchRoles()`, never deletes, and skips an existing name and the name `Server Owner`.
 - `/guildsync` calls `syncLaunchGuild`. It creates missing categories and channels from `launchLayout()` and never deletes. The six category displays are Start Here, Transaction Support, Seller Area, Buyer Area, Language Areas, and Internal Operations.
+- `/automodsync` calls `syncAutoMod`. It creates missing rules from `autoModRules()` and never edits or deletes an existing rule, so manual changes survive. Staff roles are exempt so moderators can quote a scam while handling it. One rule (`Safety · Impersonation Profile`, a `MEMBER_PROFILE` trigger) is refused by Discord with `403 Missing Access` even for a bot holding `ADMINISTRATOR`; the command reports it as refused instead of claiming success. Create that one by hand in Server Settings if Discord enables it for this guild.
 
 ## Run locally
 
@@ -117,31 +119,46 @@ From the repository root:
 
 Routes below are registered in `router/router.go` and the `Group*` methods. The prefix is `/api/v1`. Auth is public or JWT.
 
+`operator` means the caller's user id must appear in `OPERATOR_USER_IDS`. Those routes expose every account's email address, the full audit trail, and the ticket/membership surfaces (see below), so they fail closed: with `OPERATOR_USER_IDS` unset they return 403 to everyone.
+
 | Method | Path | Auth |
 |---|---|---|
 | GET | `/health/live`, `/health/ready` | public |
-| GET | `/metrics` | public only when `METRICS_ENABLE=true`; restrict it at the network in production |
+| GET | `/metrics` | public, and enabled by default (`METRICS_ENABLE=true`); restrict it at the network in production |
 | POST | `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout` | public, `auth` limiter |
-| GET | `/user`, `/user/me` | JWT |
+| GET | `/user` | JWT + operator (`OPERATOR_USER_IDS`) |
+| GET | `/user/me` | JWT |
 | POST | `/uploads` | JWT |
-| GET | `/audit-logs` | JWT |
-| GET | `/tickets/types` | JWT |
-| POST | `/tickets` | JWT |
-| GET | `/tickets` | JWT |
-| GET | `/tickets/mutasi` | JWT |
-| GET | `/tickets/whoami` | JWT |
-| GET | `/tickets/:id` | JWT |
-| POST | `/tickets/:id/claim` | JWT |
-| POST | `/tickets/:id/handoff` | JWT |
-| POST | `/tickets/:id/resolution` | JWT |
-| POST | `/tickets/:id/status` | JWT |
-| POST | `/tickets/:id/withdraw-approve` | JWT |
-| POST | `/tickets/:id/withdraw-paid` | JWT |
-| POST | `/tickets/:id/seller-approve` | JWT |
-| POST | `/membership/verify` | JWT |
-| GET | `/membership/:discord_id` | JWT |
+| GET | `/audit-logs` | JWT + operator (`OPERATOR_USER_IDS`) |
+| GET | `/tickets/types` | JWT + operator (`OPERATOR_USER_IDS`) |
+| POST | `/tickets` | JWT + operator (`OPERATOR_USER_IDS`) |
+| GET | `/tickets` | JWT + operator (`OPERATOR_USER_IDS`) |
+| GET | `/tickets/mutasi` | JWT + operator (`OPERATOR_USER_IDS`) |
+| GET | `/tickets/whoami` | JWT + operator (`OPERATOR_USER_IDS`) |
+| GET | `/tickets/:id` | JWT + operator (`OPERATOR_USER_IDS`) |
+| POST | `/tickets/:id/claim` | JWT + operator (`OPERATOR_USER_IDS`) |
+| POST | `/tickets/:id/handoff` | JWT + operator (`OPERATOR_USER_IDS`) |
+| POST | `/tickets/:id/resolution` | JWT + operator (`OPERATOR_USER_IDS`) |
+| POST | `/tickets/:id/status` | JWT + operator (`OPERATOR_USER_IDS`) |
+| POST | `/tickets/:id/withdraw-approve` | JWT + operator (`OPERATOR_USER_IDS`) |
+| POST | `/tickets/:id/withdraw-paid` | JWT + operator (`OPERATOR_USER_IDS`) |
+| POST | `/tickets/:id/seller-approve` | JWT + operator (`OPERATOR_USER_IDS`) |
+| POST | `/membership/verify` | JWT + operator (`OPERATOR_USER_IDS`) |
+| GET | `/membership/:discord_id` | JWT + operator (`OPERATOR_USER_IDS`) |
 
 The profile route is `/user/me`.
+
+### Why `/tickets` and `/membership` are operator-only
+
+Both surfaces take the caller's identity from the request: `/tickets` builds its
+`Actor` (id, roles, `is_admin`, `owner_id`, available admins) from the JSON body,
+and `/membership` reads `discord_id` and `roles` from the body. Neither value is
+cross-checked against Discord, so an ordinary JWT could assert `is_admin: true`
+and drive claims, resolutions, and the withdrawal payment path. The Discord bot
+does not use this API - it calls the ticket service in-process - so the whole
+group is gated behind the same `OPERATOR_USER_IDS` allowlist as the user
+directory and the audit trail. With the allowlist unset, nobody is an operator
+and both groups return 403.
 
 ## HTTP platform
 
