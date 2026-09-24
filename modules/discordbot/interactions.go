@@ -67,8 +67,7 @@ func (b *Bot) onInteraction(s *discordgo.Session, i *discordgo.InteractionCreate
 
 func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate, actor ticket.Actor, admin bool) {
 	name := i.ApplicationCommandData().Name
-	adminOnly := map[string]bool{"panel": true, "rolepanel": true, "verifypanel": true, "testwelcome": true, "lookup": true, "tickets": true, "ticket-handoff": true, "ticket-resolution": true, "seller-approve": true, "withdraw-paid": true, "rolesync": true, "guildsync": true, "server": true, "revenue": true}
-	if adminOnly[name] && !admin {
+	if adminOnlyNames[name] && !admin {
 		b.edit(s, i, "Admin only.", nil, nil)
 		return
 	}
@@ -94,6 +93,19 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 			return
 		}
 		b.edit(s, i, "Guild layout synced. Created "+itoa(cats)+" categories and "+itoa(chans)+" channels. Nothing was deleted or overwritten.", nil, nil)
+	case "automodsync":
+		created, skipped, unsupported, err := b.syncAutoMod(s)
+		if err != nil {
+			b.edit(s, i, err.Error(), nil, nil)
+			return
+		}
+		msg := "AutoMod synced. Created " + itoa(created) + " rules, " + itoa(skipped) + " already existed."
+		if len(unsupported) > 0 {
+			msg += " Discord refused " + itoa(len(unsupported)) + " rule(s): " + strings.Join(unsupported, ", ") +
+				". Those must be created by hand in Server Settings."
+		}
+		msg += " Nothing was edited or deleted."
+		b.edit(s, i, msg, nil, nil)
 	case "rolesync":
 		n, err := b.syncLaunchRoles(s)
 		if err != nil {
@@ -171,7 +183,7 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 			}
 			b.edit(s, i, "", []*discordgo.MessageEmbed{ticketSummary(rec)}, nil)
 		case "ticket-handoff":
-			next, err := b.tickets.Handoff(ctx, actor, rec.ID, option("admin"), option("reason"))
+			next, err := b.tickets.Handoff(ctx, b.withAdmins(s, actor), rec.ID, option("admin"), option("reason"))
 			b.replyRecord(s, i, next, err)
 		case "ticket-resolution":
 			next, err := b.tickets.SetResolution(ctx, actor, rec.ID, option("note"))
@@ -180,7 +192,12 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 			opener, _ := s.GuildMember(b.guildID, rec.OpenerID)
 			next, err := b.tickets.ApproveSeller(ctx, actor, rec.ID, option("reason"), b.roleNames(s, opener))
 			if err == nil {
-				_ = b.exclusiveTier(s, rec.OpenerID, membership.TierSeller)
+				// The record now says Seller. If Discord never got the role the member
+				// is a seller in the database and a plain member in the guild, so a
+				// silent failure here is a real divergence between the two stores.
+				if tierErr := b.exclusiveTier(s, rec.OpenerID, membership.TierSeller); tierErr != nil && b.log != nil {
+					b.log.WithError(tierErr).WithField("discord_id", rec.OpenerID).Warn("seller approved but the Seller role was not granted")
+				}
 			}
 			b.replyRecord(s, i, next, err)
 		case "withdraw-paid":
@@ -377,6 +394,7 @@ func (b *Bot) handleModal(s *discordgo.Session, i *discordgo.InteractionCreate, 
 		b.edit(s, i, "Could not create the ticket thread. Ask an admin to check permissions.", nil, nil)
 		return
 	}
+	actor = b.withAdmins(s, actor)
 	rec, err := b.tickets.Create(context.Background(), actor, ticket.CreateInput{Type: spec.Key, Data: data, ThreadID: thread.ID})
 	if err != nil {
 		_, _ = s.ChannelDelete(thread.ID)

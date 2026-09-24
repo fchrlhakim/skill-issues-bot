@@ -25,6 +25,7 @@ var Commands = []Command{
 	{Name: "mutasi", Description: "View only your own admin-confirmed outgoing records"},
 	{Name: "seller-approve", Description: "Approve this seller application and grant Seller (admin only)", AdminOnly: true},
 	{Name: "withdraw-paid", Description: "Record an already completed external withdrawal payment (admin only)", AdminOnly: true},
+	{Name: "automodsync", Description: "Create missing launch AutoMod safety rules (admin only, never edits or deletes)", AdminOnly: true},
 	{Name: "rolesync", Description: "Create missing launch roles (admin only, never deletes)", AdminOnly: true},
 	{Name: "guildsync", Description: "Create missing launch categories and channels (admin only, never deletes)", AdminOnly: true},
 	{Name: "server", Description: "Show member and ticket counts for this server (admin only)", AdminOnly: true},
@@ -36,3 +37,20 @@ const SafetyCopy = "Admins never ask for passwords, OTP, PIN, CVV, full card num
 	"Every deal goes through a ticket — never DMs."
 
 const VerifyButtonID = "verify:accept"
+
+// adminOnlyNames is the runtime authorization gate for admin slash commands,
+// derived from Commands so the catalog and the gate cannot drift apart.
+//
+// It exists because DefaultMemberPermissions (set in slashCommands) only hides
+// the command by default: a guild owner can re-grant it per role in Server
+// Settings, and Discord then delivers the interaction. Discord visibility is
+// not authorization, so every admin command is re-checked here.
+var adminOnlyNames = func() map[string]bool {
+	names := make(map[string]bool)
+	for _, c := range Commands {
+		if c.AdminOnly {
+			names[c.Name] = true
+		}
+	}
+	return names
+}()
