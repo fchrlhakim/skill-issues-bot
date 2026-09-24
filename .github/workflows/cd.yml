@@ -27,9 +27,27 @@ jobs:
     name: Require a green CI run
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      actions: read
     steps:
-      - name: Record trigger
-        run: echo "CD allowed (event=${{ github.event_name }})"
+      - name: Require a green CI run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          sha="${{ github.sha }}"
+          # The job is named "Require a green CI run", so it must actually
+          # check. It used to only echo the event name, which let a release be
+          # dispatched on top of a red or unfinished CI run.
+          conclusion="$(gh api \
+            "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?head_sha=${sha}&per_page=100" \
+            --jq '[.workflow_runs[] | select(.conclusion != null)][0].conclusion // "none"')"
+          echo "CI conclusion for ${sha}: ${conclusion}"
+          if [ "$conclusion" != "success" ]; then
+            echo "::error ::CI for ${sha} is '${conclusion}', not success - refusing to deploy."
+            exit 1
+          fi
 
   build-and-push:
     name: Build & Push Docker Image to GHCR
