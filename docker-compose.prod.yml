@@ -83,6 +83,14 @@ services:
       SAAS_REFRESH_TOKEN: ${SAAS_REFRESH_TOKEN:-}
       SAAS_AUTH_URL: ${SAAS_AUTH_URL:-}
       SAAS_TOKEN_FILE: ${SAAS_TOKEN_FILE:-}
+      # Comma-separated user ids allowed on the operator-only surfaces (GET /user,
+      # GET /audit-logs, and the whole /tickets and /membership groups). Without
+      # this the allowlist is empty, every caller is refused, and the ticket API
+      # has no usable operator. It must be set here or the container never sees it.
+      OPERATOR_USER_IDS: ${OPERATOR_USER_IDS:-}
+      # CIDRs whose X-Forwarded-For may be believed. Empty trusts no proxy, which
+      # is correct for this loopback-only HTTP surface.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       SKIP_MIGRATIONS: ${SKIP_MIGRATIONS:-}
       TZ: Asia/Jakarta
     ports:
