@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	goRedis "github.com/redis/go-redis/v9"
@@ -19,7 +20,15 @@ type LocalRateLimiter struct {
 	rps      float64
 	burst    int
 	timeout  time.Duration
+	// entries counts live buckets, since sync.Map has no Len.
+	entries atomic.Int64
 }
+
+// maxLimiterEntries caps how many per-client buckets are held. Keys are derived
+// from client IPs, so an attacker with many addresses could otherwise grow this
+// map without limit. On overflow the whole map is dropped, which only resets
+// in-flight counters; correctness of the limit itself is unaffected.
+const maxLimiterEntries = 10_000
 
 func NewLocalRateLimiter(rps float64, burst int) RateLimiter {
 	if rps <= 0 {
@@ -42,7 +51,23 @@ func (r *LocalRateLimiter) Allow(ctx context.Context, key string) bool {
 	if key == "" {
 		key = "global"
 	}
-	value, _ := r.limiters.LoadOrStore(key, rate.NewLimiter(rate.Limit(r.rps), r.burst))
+	if _, loaded := r.limiters.Load(key); !loaded && r.entries.Load() >= maxLimiterEntries {
+		// Bounded memory beats precise counters for an unknown client set. A
+		// dropped map only lets a burst through once, and the per-route limits
+		// still apply.
+		r.limiters.Range(func(k, _ any) bool {
+			r.limiters.Delete(k)
+			return true
+		})
+		r.entries.Store(0)
+	}
+	if _, loaded := r.limiters.LoadOrStore(key, rate.NewLimiter(rate.Limit(r.rps), r.burst)); !loaded {
+		r.entries.Add(1)
+	}
+	value, ok := r.limiters.Load(key)
+	if !ok {
+		return false
+	}
 	limiter, ok := value.(*rate.Limiter)
 	if !ok {
 		return false
