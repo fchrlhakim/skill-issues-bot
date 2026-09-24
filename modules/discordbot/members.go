@@ -60,12 +60,26 @@ func (b *Bot) reconcileTiers(ctx context.Context) (int, int, error) {
 			}
 		}
 		tier := membership.MemberTier(names)
-		// A member with no tier role is "none"; anything else (including a
-		// conflicting pair) is a real tier and must be stored as it stands.
-		if tier == membership.TierNone || tier == membership.TierConflict {
+		// A conflicting pair cannot be represented as a tier, and it needs a
+		// human to resolve, so it is reported by /lookup rather than guessed.
+		if tier == membership.TierConflict {
 			continue
 		}
 		row, known := byID[m.User.ID]
+		// A member with no tier role is "none". Recording that only matters if
+		// a row already exists: leaving the old tier there would report someone
+		// as a Buyer after their role was taken away. Members who never had a
+		// row are skipped, so the table does not grow to hold every lurker.
+		if tier == membership.TierNone {
+			if !known || row.Tier == membership.TierNone {
+				continue
+			}
+			if _, err := b.members.Upsert(ctx, m.User.ID, row.Username, membership.TierNone, row.AccountAgeDays, false); err != nil {
+				return repaired, 0, err
+			}
+			repaired++
+			continue
+		}
 		restricted := membership.Restricted(names)
 		age := row.AccountAgeDays
 		if !known {
