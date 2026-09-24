@@ -38,6 +38,21 @@ type Bot struct {
 	revenue     *http.Client
 	revenueURL  string
 	saas        *saasToken
+
+	// guildCache memoizes the guild object. Every interaction needs its OwnerID,
+	// and s.Guild() is a REST call, so without this each click costs a round trip
+	// to Discord. Guarded by guildMu; refreshed at most once per guildCacheTTL.
+	guildMu      sync.Mutex
+	guildCache   *discordgo.Guild
+	guildCacheAt time.Time
+
+	// adminIDsCache memoizes the admin roster. Computing it walks every guild
+	// member (up to 1000) and calls the permission resolver for each, which is
+	// far too much work to repeat on every interaction; only opening a ticket or
+	// handing one off actually needs the list.
+	adminMu      sync.Mutex
+	adminIDsList []string
+	adminIDsAt   time.Time
 }
 
 func New(token, guildID string, tickets ticket.ServiceInterface, members membership.ServiceInterface, log *logrus.Logger) (*Bot, error) {
@@ -355,8 +370,8 @@ func (b *Bot) isAdmin(s *discordgo.Session, m *discordgo.Member) bool {
 	if m == nil {
 		return false
 	}
-	guild, err := s.Guild(b.guildID)
-	if err != nil {
+	guild := b.guild(s)
+	if guild == nil {
 		return false
 	}
 	if m.User != nil && m.User.ID == guild.OwnerID {
@@ -374,43 +389,80 @@ func (b *Bot) isAdmin(s *discordgo.Session, m *discordgo.Member) bool {
 	return perms&discordgo.PermissionAdministrator != 0
 }
 
+// guildCacheTTL bounds how stale a cached guild object may be. It is long enough
+// to remove a REST call per interaction and short enough that a rename or an
+// ownership change is picked up without a restart.
+const guildCacheTTL = 2 * time.Minute
+
+// guild returns the guild, from cache when fresh. A cache miss that fails is not
+// cached, so a transient REST error does not pin an empty guild for the TTL.
+func (b *Bot) guild(s *discordgo.Session) *discordgo.Guild {
+	b.guildMu.Lock()
+	defer b.guildMu.Unlock()
+	if b.guildCache != nil && time.Since(b.guildCacheAt) < guildCacheTTL {
+		return b.guildCache
+	}
+	guild, err := s.Guild(b.guildID)
+	if err != nil {
+		return b.guildCache
+	}
+	b.guildCache, b.guildCacheAt = guild, time.Now()
+	return guild
+}
+
+// actor builds the ticket actor for one interaction. Only the fields every
+// caller needs are computed eagerly; AvailableAdmins is resolved lazily by
+// actorWithAdmins because computing it walks the whole member list.
 func (b *Bot) actor(s *discordgo.Session, m *discordgo.Member) ticket.Actor {
 	username, tag := "", ""
 	id := ""
 	if m != nil && m.User != nil {
 		id, username, tag = m.User.ID, m.User.Username, m.User.String()
 	}
-	guild, _ := s.Guild(b.guildID)
 	owner := ""
-	if guild != nil {
+	if guild := b.guild(s); guild != nil {
 		owner = guild.OwnerID
 	}
 	return ticket.Actor{
 		ID: id, Username: username, Tag: tag, Roles: b.roleNames(s, m),
-		IsAdmin: b.isAdmin(s, m), OwnerID: owner, AvailableAdmins: b.adminIDs(s),
+		IsAdmin: b.isAdmin(s, m), OwnerID: owner,
 	}
 }
 
+// withAdmins fills AvailableAdmins for the paths that actually hand a ticket to
+// an admin (open, handoff). Those are rare; every other interaction would pay
+// for the member walk and never read it.
+func (b *Bot) withAdmins(s *discordgo.Session, actor ticket.Actor) ticket.Actor {
+	actor.AvailableAdmins = b.adminIDs(s)
+	return actor
+}
+
 func (b *Bot) adminIDs(s *discordgo.Session) []string {
-	guild, err := s.Guild(b.guildID)
-	if err != nil {
-		return nil
+	b.adminMu.Lock()
+	defer b.adminMu.Unlock()
+	if b.adminIDsList != nil && time.Since(b.adminIDsAt) < guildCacheTTL {
+		return b.adminIDsList
+	}
+	guild := b.guild(s)
+	if guild == nil {
+		return b.adminIDsList
 	}
 	ids := []string{guild.OwnerID}
 	members, err := s.GuildMembers(b.guildID, "", 1000)
 	if err != nil {
-		return ids
+		return b.adminIDsList
 	}
 	seen := map[string]bool{guild.OwnerID: true}
-	for _, m := range members {
-		if m.User == nil || m.User.Bot {
+	for _, member := range members {
+		if member.User == nil || member.User.Bot {
 			continue
 		}
-		if b.isAdmin(s, m) && !seen[m.User.ID] {
-			seen[m.User.ID] = true
-			ids = append(ids, m.User.ID)
+		if b.isAdmin(s, member) && !seen[member.User.ID] {
+			seen[member.User.ID] = true
+			ids = append(ids, member.User.ID)
 		}
 	}
+	b.adminIDsList, b.adminIDsAt = ids, time.Now()
 	return ids
 }
 
@@ -467,7 +519,12 @@ func (b *Bot) onJoin(s *discordgo.Session, ev *discordgo.GuildMemberAdd) {
 	if ev.GuildID != b.guildID || ev.User == nil || ev.User.Bot {
 		return
 	}
-	_ = b.exclusiveTier(s, ev.User.ID, membership.TierUser)
+	// A failure here leaves the member without the User role while the row below
+	// still records TierUser, so the two sources of truth silently disagree. It
+	// is not fatal to the join, but it must be visible.
+	if err := b.exclusiveTier(s, ev.User.ID, membership.TierUser); err != nil && b.log != nil {
+		b.log.WithError(err).WithField("discord_id", ev.User.ID).Warn("could not grant the User tier on join")
+	}
 	age := accountAgeDays(ev.User)
 	_, _ = b.members.Upsert(context.Background(), ev.User.ID, ev.User.Username, membership.TierUser, age, false)
 	b.noteJoin()
