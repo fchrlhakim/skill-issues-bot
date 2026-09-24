@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Build context is the repo root.
 
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.27.1-bookworm AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 ENV GOPROXY=https://proxy.golang.org,direct
