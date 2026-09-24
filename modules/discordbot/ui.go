@@ -211,6 +211,15 @@ func slashCommands() []*discordgo.ApplicationCommand {
 			cmd.Options = []*discordgo.ApplicationCommandOption{{Type: str, Name: "reason", Description: "reason", Required: true, MaxLength: ticket.TicketTextLimit}}
 		case "withdraw-paid":
 			cmd.Options = []*discordgo.ApplicationCommandOption{{Type: str, Name: "reference", Description: "receipt reference", Required: true, MaxLength: ticket.PaymentRefLimit}}
+		case "areapanel":
+			cmd.Options = []*discordgo.ApplicationCommandOption{{
+				Type: discordgo.ApplicationCommandOptionString, Name: "side",
+				Description: "Which marketplace area this panel belongs to", Required: true,
+				Choices: []*discordgo.ApplicationCommandOptionChoice{
+					{Name: "Seller Area", Value: membership.TierSeller},
+					{Name: "Buyer Area", Value: membership.TierBuyer},
+				},
+			}}
 		}
 		out = append(out, cmd)
 	}
@@ -291,6 +300,51 @@ func memberPanel(counts map[string]int, total int) *discordgo.InteractionRespons
 			},
 			Footer: &discordgo.MessageEmbedFooter{Text: disclaimer},
 		}},
+		AllowedMentions: &discordgo.MessageAllowedMentions{},
+	}
+}
+
+// areaPanel is the standing message inside a marketplace area. It tells the
+// member why they can see this area and what they cannot see, and gives them a
+// button to act without leaving the channel. The buttons open a ticket modal
+// through the same `ticket:request:` path the ticket panel uses; eligibility is
+// enforced when the ticket is created, so a button never has to be hidden.
+func areaPanel(side string) *discordgo.InteractionResponseData {
+	var title, body string
+	var buttons []discordgo.MessageComponent
+	switch side {
+	case membership.TierSeller:
+		title = "🏪 Seller Area"
+		body = "You can see this area because you hold the **Seller** role.\n" +
+			"The **Buyer Area** is hidden from you, and this area is hidden from Buyers — " +
+			"the two sides are kept apart on purpose.\n\n" +
+			"**Withdrawals are manual.** Approval is not payment: an admin verifies the " +
+			"external sale, then records one outgoing entry. There is no automatic transfer."
+		buttons = []discordgo.MessageComponent{
+			discordgo.Button{CustomID: "ticket:request:withdraw", Label: "Request a withdrawal", Style: discordgo.PrimaryButton, Emoji: &discordgo.ComponentEmoji{Name: "📤"}},
+			discordgo.Button{CustomID: "ticket:request:sale", Label: "Coordinate a sale", Style: discordgo.SecondaryButton, Emoji: &discordgo.ComponentEmoji{Name: "🏷️"}},
+		}
+	default:
+		title = "🛍️ Buyer Area"
+		body = "You can see this area because you hold the **Buyer** role.\n" +
+			"The **Seller Area** is hidden from you, and this area is hidden from Sellers — " +
+			"the two sides are kept apart on purpose.\n\n" +
+			"**Seller access is not self-service.** An admin grants it after a seller " +
+			"application, and it replaces your Buyer role."
+		buttons = []discordgo.MessageComponent{
+			discordgo.Button{CustomID: "ticket:request:purchase", Label: "Open a purchase ticket", Style: discordgo.PrimaryButton, Emoji: &discordgo.ComponentEmoji{Name: "🛒"}},
+			discordgo.Button{CustomID: "ticket:request:buyer-support", Label: "Get help", Style: discordgo.SecondaryButton, Emoji: &discordgo.ComponentEmoji{Name: "💬"}},
+		}
+	}
+	return &discordgo.InteractionResponseData{
+		Embeds: []*discordgo.MessageEmbed{{
+			Title: title, Color: 0x3498DB, Description: body,
+			Fields: []*discordgo.MessageEmbedField{
+				{Name: "Never share", Value: "passwords · OTP · PIN · CVV · card numbers · API keys · private keys · seed phrases"},
+			},
+			Footer: &discordgo.MessageEmbedFooter{Text: disclaimer},
+		}},
+		Components:      []discordgo.MessageComponent{discordgo.ActionsRow{Components: buttons}},
 		AllowedMentions: &discordgo.MessageAllowedMentions{},
 	}
 }

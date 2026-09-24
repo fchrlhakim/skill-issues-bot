@@ -29,6 +29,7 @@ var Commands = []Command{
 	{Name: "rolesync", Description: "Create missing launch roles (admin only, never deletes)", AdminOnly: true},
 	{Name: "guildsync", Description: "Create missing launch categories and channels (admin only, never deletes)", AdminOnly: true},
 	{Name: "memberpanel", Description: "Post the Buyer/Seller split panel with live counts here (admin only)", AdminOnly: true},
+	{Name: "areapanel", Description: "Post the standing panel with action buttons for a marketplace area (admin only)", AdminOnly: true},
 	{Name: "membersync", Description: "Reconcile stored member tiers with Discord roles and prune departed members (admin only)", AdminOnly: true},
 	{Name: "server", Description: "Show member and ticket counts for this server (admin only)", AdminOnly: true},
 	{Name: "revenue", Description: "Show confirmed outgoing ledger totals (admin only)", AdminOnly: true},

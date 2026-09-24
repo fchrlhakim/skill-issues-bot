@@ -16,6 +16,7 @@ Tiers are exclusive: `user` → `buyer` → `seller`. The Discord roles are `Use
 - Verify (`verify:accept` / `POST /api/v1/membership/verify`) grants Buyer and removes User. `DecideVerification` refuses `Suspended`, `Blacklisted`, `Under Review`, a nil role list, and `MemberTier` `conflict` (two of User, Buyer, and Seller, or any legacy role `New Member`, `Verified Seller`, `Provisional Seller`, `Verified Buyer`). Already Buyer or Seller returns action `already` and does not change the tier.
 - Seller comes only through admin `/seller-approve` after a seller-verification ticket. `ExclusiveGrant` adds the target role and removes the other two member roles.
 - The two marketplace areas are separated in the server, not only in the database: the Seller Area denies `VIEW_CHANNEL` to `@everyone` and `User`, and the Buyer Area does the same, so a Buyer cannot read the Seller channels and a Seller cannot read the Buyer channels.
+- The Buyer Area and the Seller Area each hold a standing panel from `/areapanel`. Its buttons open a ticket modal through the same `ticket:request:` path the ticket panel uses, so a button never has to be hidden: eligibility is enforced when the ticket is created.
 - `guild_members` stores the tier. It is written on join, on Verify, and on a seller approval. `/membersync` reconciles the stored tier against the roles Discord actually holds and prunes rows for members who left; `/memberpanel` reports the counts read from Discord's roles rather than from the stored column.
 - `NeverSelfAssignable` includes staff roles and User, Buyer, and Seller. Language and region roles in `PickableRoles` are the only self-serve picks (`/rolepanel`).
 - `YoungAccountDays` is 7. A young account can still verify. The decision sets `FlagYoungAccount`.
@@ -98,6 +99,7 @@ Discord visibility is not authorization. Handlers recheck admin in the `handleCo
 | `rolesync` | yes | Create missing launch roles (admin only, never deletes) |
 | `guildsync` | yes | Create missing launch categories and channels (admin only, never deletes) |
 | `memberpanel` | yes | Post the Buyer/Seller split panel with live counts here (admin only) |
+| `areapanel` | yes | Post the standing panel with action buttons for a marketplace area (admin only) |
 | `membersync` | yes | Reconcile stored member tiers with Discord roles and prune departed members (admin only) |
 | `server` | yes | Show member and ticket counts for this server (admin only) |
 | `revenue` | yes | Show confirmed outgoing ledger totals (admin only) |

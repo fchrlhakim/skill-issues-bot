@@ -160,6 +160,17 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 			Embeds: memberPanel(counts, neither).Embeds, AllowedMentions: &discordgo.MessageAllowedMentions{},
 		})
 		b.edit(s, i, "Panel posted.", nil, nil)
+	case "areapanel":
+		side := option("side")
+		if side != membership.TierSeller && side != membership.TierBuyer {
+			b.edit(s, i, "Choose either the Seller Area or the Buyer Area.", nil, nil)
+			return
+		}
+		panel := areaPanel(side)
+		_, _ = s.ChannelMessageSendComplex(i.ChannelID, &discordgo.MessageSend{
+			Embeds: panel.Embeds, Components: panel.Components, AllowedMentions: &discordgo.MessageAllowedMentions{},
+		})
+		b.edit(s, i, "Panel posted.", nil, nil)
 	case "membersync":
 		repaired, pruned, err := b.reconcileTiers(ctx)
 		if err != nil {

@@ -1,0 +1,104 @@
+package discordbot
+
+import (
+	"strings"
+	"testing"
+
+	"go-starter-kit/modules/membership"
+	"go-starter-kit/modules/ticket"
+
+	"github.com/bwmarrin/discordgo"
+)
+
+// buttonIDs pulls the custom_ids out of a panel response.
+func buttonIDs(p *discordgo.InteractionResponseData) []string {
+	var out []string
+	for _, row := range p.Components {
+		ar, ok := row.(discordgo.ActionsRow)
+		if !ok {
+			continue
+		}
+		for _, c := range ar.Components {
+			switch b := c.(type) {
+			case discordgo.Button:
+				out = append(out, b.CustomID)
+			case *discordgo.Button:
+				out = append(out, b.CustomID)
+			}
+		}
+	}
+	return out
+}
+
+// A button that names a ticket type the catalog does not know opens a modal
+// for a type that cannot be created, so the member gets an error after filling
+// the form in. Every request button must resolve.
+func TestAreaPanelButtonsNameRealTicketTypes(t *testing.T) {
+	for _, side := range []string{membership.TierBuyer, membership.TierSeller} {
+		ids := buttonIDs(areaPanel(side))
+		if len(ids) == 0 {
+			t.Fatalf("%s panel has no buttons", side)
+		}
+		for _, id := range ids {
+			if !strings.HasPrefix(id, "ticket:request:") {
+				t.Errorf("%s: %q is not a ticket request button", side, id)
+				continue
+			}
+			key := strings.TrimPrefix(id, "ticket:request:")
+			if _, ok := ticket.TypeByKey(key); !ok {
+				t.Errorf("%s: button %q names ticket type %q which does not exist", side, id, key)
+			}
+		}
+	}
+}
+
+// The withdraw button is only meaningful to a Seller, and the purchase button
+// only to a Buyer. Putting one on the wrong panel gives a member a button that
+// is refused after they fill in the modal.
+func TestAreaPanelButtonsMatchTheSide(t *testing.T) {
+	seller := strings.Join(buttonIDs(areaPanel(membership.TierSeller)), " ")
+	if !strings.Contains(seller, "ticket:request:withdraw") {
+		t.Error("seller panel should offer a withdrawal request")
+	}
+	if strings.Contains(seller, "ticket:request:purchase") {
+		t.Error("seller panel must not offer the buyer purchase ticket")
+	}
+	buyer := strings.Join(buttonIDs(areaPanel(membership.TierBuyer)), " ")
+	if !strings.Contains(buyer, "ticket:request:purchase") {
+		t.Error("buyer panel should offer a purchase ticket")
+	}
+	if strings.Contains(buyer, "ticket:request:withdraw") {
+		t.Error("buyer panel must not offer the seller-only withdrawal ticket")
+	}
+}
+
+// The withdraw ticket is gated to Seller, so the buyer panel must never expose
+// it. This pins the panel to the same rule the service enforces on create.
+func TestBuyerPanelAvoidsSellerOnlyTickets(t *testing.T) {
+	for _, id := range buttonIDs(areaPanel(membership.TierBuyer)) {
+		key := strings.TrimPrefix(id, "ticket:request:")
+		if ticket.GatedTypes[key] && !membership.EligibleTicketApplicant(key, []string{membership.RoleBuyer}) {
+			t.Errorf("buyer panel exposes %q, which a Buyer cannot open", key)
+		}
+	}
+}
+
+// Each area panel must state that the other side is hidden, so the member
+// understands why they cannot see the other area.
+func TestAreaPanelStatesTheOtherSideIsHidden(t *testing.T) {
+	for _, tc := range []struct{ side, other string }{
+		{membership.TierBuyer, "Seller Area"},
+		{membership.TierSeller, "Buyer Area"},
+	} {
+		p := areaPanel(tc.side)
+		if len(p.Embeds) != 1 {
+			t.Fatalf("%s: embeds=%d", tc.side, len(p.Embeds))
+		}
+		if !strings.Contains(p.Embeds[0].Description, tc.other) {
+			t.Errorf("%s panel does not mention the hidden %s", tc.side, tc.other)
+		}
+		if !strings.Contains(p.Embeds[0].Description, "hidden") {
+			t.Errorf("%s panel does not say the other side is hidden", tc.side)
+		}
+	}
+}

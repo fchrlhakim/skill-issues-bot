@@ -9,7 +9,7 @@ func TestCommandCatalogMatchesHandoff(t *testing.T) {
 		"whoami": false, "safety": false, "lookup": true, "withdraw": false, "mutasi": false,
 		"seller-approve": true, "withdraw-paid": true, "rolesync": true, "guildsync": true,
 		"automodsync": true,
-		"memberpanel": true, "membersync": true,
+		"memberpanel": true, "membersync": true, "areapanel": true,
 		"server": true, "revenue": true,
 	}
 	if len(Commands) != len(want) {
