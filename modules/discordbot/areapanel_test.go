@@ -102,3 +102,23 @@ func TestAreaPanelStatesTheOtherSideIsHidden(t *testing.T) {
 		}
 	}
 }
+
+// The verify reply has to name the side the member is now on. "Membership
+// confirmed" left a new member unable to tell whether they were a Buyer or a
+// Seller, and the two areas look identical until one opens.
+func TestTierLabelNamesTheSide(t *testing.T) {
+	for _, tc := range []struct {
+		roles []string
+		want  string
+	}{
+		{[]string{membership.RoleBuyer}, "Buyer"},
+		{[]string{membership.RoleSeller}, "Seller"},
+		{[]string{membership.RoleUser}, "member without marketplace access"},
+		{[]string{membership.RoleBuyer, membership.RoleSeller}, "member without marketplace access"},
+		{nil, "member without marketplace access"},
+	} {
+		if got := tierLabel(tc.roles); got != tc.want {
+			t.Errorf("tierLabel(%v) = %q, want %q", tc.roles, got, tc.want)
+		}
+	}
+}

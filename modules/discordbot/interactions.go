@@ -291,8 +291,14 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 			if tierErr := b.setTier(s, actor.ID, membership.TierBuyer, i.Member.User.Username); tierErr != nil && b.log != nil {
 				b.log.WithError(tierErr).WithField("discord_id", actor.ID).Warn("verify granted but the Buyer role or the stored tier did not update")
 			}
+			// Say exactly what changed and what did not. A new member has no way
+			// to tell whether they are a Buyer or a Seller, and the two areas
+			// look identical until one of them opens.
+			b.edit(s, i, "You are now a **Buyer**. The Buyer Area is open to you; "+
+				"the Seller Area stays hidden until an admin approves a seller application.", nil, nil)
+			return
 		}
-		b.edit(s, i, "Membership confirmed. "+decision.Reason, nil, nil)
+		b.edit(s, i, "You are already a **"+tierLabel(actor.Roles)+"**. Your marketplace access is unchanged.", nil, nil)
 		return
 	}
 	parts := strings.SplitN(cid, ":", 3)

@@ -208,6 +208,21 @@ func (b *Bot) setTier(s *discordgo.Session, userID, target, username string) err
 	return err
 }
 
+// tierLabel names the marketplace side a member is on, for messages that have to
+// tell someone what they are. MemberTier reports "none" for an unverified member
+// and "conflict" for someone holding two tier roles; neither is a side, and
+// calling them a Buyer would be wrong.
+func tierLabel(roles []string) string {
+	switch membership.MemberTier(roles) {
+	case membership.TierBuyer:
+		return "Buyer"
+	case membership.TierSeller:
+		return "Seller"
+	default:
+		return "member without marketplace access"
+	}
+}
+
 func (b *Bot) reconcileSummary(repaired, pruned int) string {
 	return fmt.Sprintf("Tier sync complete. Repaired %d stored tier(s), pruned %d row(s) for members who left.", repaired, pruned)
 }
