@@ -129,8 +129,14 @@ jobs:
       - name: Check SSH configuration
         id: check-ssh
         run: |
-          if [ -z "${{ secrets.SSH_HOST }}" ]; then
-            echo "::warning ::SSH_HOST secret is not configured. Skipping SSH deploy."
+          # Name every missing secret. Without SSH_KEY the scp/ssh actions fail
+          # with an opaque auth error instead of saying which secret is absent.
+          missing=""
+          [ -z "${{ secrets.SSH_HOST }}" ] && missing="$missing SSH_HOST"
+          [ -z "${{ secrets.SSH_USER }}" ] && missing="$missing SSH_USER"
+          [ -z "${{ secrets.SSH_KEY }}" ] && missing="$missing SSH_KEY"
+          if [ -n "$missing" ]; then
+            echo "::warning ::SSH deploy skipped: missing repository secret(s):$missing"
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
