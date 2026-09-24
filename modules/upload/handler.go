@@ -5,6 +5,7 @@ import (
 
 	"go-starter-kit/infrastructure/httplib"
 	"go-starter-kit/infrastructure/middleware"
+	"go-starter-kit/modules/primitive"
 
 	"github.com/gin-gonic/gin"
 )
@@ -41,5 +42,5 @@ func (h *Http) Upload(c *gin.Context) {
 		httplib.SetErrorResponse(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
-	httplib.SetCreatedResponse(c, "uploaded", data)
+	httplib.SetCreatedResponse(c, "uploaded", primitive.NewUploadedFileResponse(data))
 }

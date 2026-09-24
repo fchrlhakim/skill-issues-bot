@@ -19,6 +19,27 @@ type UserResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// UploadedFileResponse is the public shape of an upload. It deliberately omits
+// the storage path: that value is an absolute server filesystem location, and
+// returning it leaks the deployment layout to the caller.
+type UploadedFileResponse struct {
+	ID          uuid.UUID `json:"id"`
+	Original    string    `json:"original"`
+	Size        int64     `json:"size"`
+	ContentType string    `json:"content_type"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func NewUploadedFileResponse(file UploadedFile) UploadedFileResponse {
+	return UploadedFileResponse{
+		ID:          file.ID,
+		Original:    file.Original,
+		Size:        file.Size,
+		ContentType: file.ContentType,
+		CreatedAt:   file.CreatedAt,
+	}
+}
+
 type UserListResponse struct {
 	Items      []UserResponse `json:"items"`
 	NextCursor string         `json:"next_cursor,omitempty"`
