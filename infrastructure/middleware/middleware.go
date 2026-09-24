@@ -168,15 +168,58 @@ func GetUserID(c *gin.Context) (uuid.UUID, bool) {
 	return userID, ok
 }
 
+// OperatorAllowlistKey is the context key the operator gate reads. The value is
+// a map[uuid.UUID]struct{} of accounts allowed to read operator-only surfaces
+// (the user directory, the audit trail).
+const OperatorAllowlistKey = "operator_allowlist"
+
+// IsOperator reports whether the caller may read operator-only data.
+//
+// Fail-closed by construction: with no allowlist wired, nobody is an operator.
+// That matters because this repository has no role column — Discord is the only
+// place an "admin" is defined, and the HTTP surface has no other notion of one.
+// An unauthenticated or unlisted caller therefore gets nothing rather than
+// everything, which is the opposite of the previous behaviour.
+func IsOperator(c *gin.Context) bool {
+	value, exists := c.Get(OperatorAllowlistKey)
+	if !exists {
+		return false
+	}
+	allowlist, ok := value.(map[uuid.UUID]struct{})
+	if !ok || len(allowlist) == 0 {
+		return false
+	}
+	userID, ok := GetUserID(c)
+	if !ok || userID == uuid.Nil {
+		return false
+	}
+	_, allowed := allowlist[userID]
+	return allowed
+}
+
+// OperatorMiddleware rejects any caller that is not in the operator allowlist.
+// Use it to mount an entire route group that must never be reachable by an
+// ordinary authenticated account. Like IsOperator it fails closed: with no
+// allowlist wired, every request is refused.
+func OperatorMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !IsOperator(c) {
+			httplib.SetErrorResponse(c, http.StatusForbidden, primitive.MessageForbidden, nil)
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 func clientKey(c *gin.Context) string {
 	if userID, ok := GetUserID(c); ok {
 		return "user:" + userID.String()
 	}
-	forwardedFor := c.GetHeader("X-Forwarded-For")
-	if forwardedFor != "" {
-		parts := strings.Split(forwardedFor, ",")
-		return "ip:" + strings.TrimSpace(parts[0])
-	}
+	// c.ClientIP() already resolves X-Forwarded-For, but only from the proxies
+	// gin was told to trust (SetTrustedProxies). Reading the header directly here
+	// would let any caller pick its own rate-limit bucket by sending a fresh
+	// X-Forwarded-For on every request, which is a trivial bypass.
 	return "ip:" + c.ClientIP()
 }
 

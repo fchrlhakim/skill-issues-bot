@@ -12,6 +12,7 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type HandlerRouter struct {
@@ -43,6 +44,18 @@ func (hr *HandlerRouter) RouterWithMiddleware() *gin.Engine {
 		r.Use(observability.Middleware())
 	}
 	r.Use(middleware.AuditLog(hr.Setup.AuditLog, hr.Setup.Logger))
+	// Operator-only surfaces (user directory, audit trail) read this from context.
+	// Absent or empty means nobody is an operator, so the gate fails closed.
+	r.Use(func(c *gin.Context) {
+		if len(hr.Setup.Config.OperatorAllowlist) > 0 {
+			allowlist := make(map[uuid.UUID]struct{}, len(hr.Setup.Config.OperatorAllowlist))
+			for _, id := range hr.Setup.Config.OperatorAllowlist {
+				allowlist[id] = struct{}{}
+			}
+			c.Set(middleware.OperatorAllowlistKey, allowlist)
+		}
+		c.Next()
+	})
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     hr.Setup.Config.AllowedOrigins,
 		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
@@ -83,13 +96,21 @@ func (hr *HandlerRouter) RouterWithMiddleware() *gin.Engine {
 	auditGroup.Use(middleware.RateLimiterMiddlewareWithPrefix(hr.Setup.Limiter, "audit"))
 	hr.Setup.AuditHttp.GroupAuditLog(auditGroup)
 
+	// The ticket HTTP surface builds its Actor - including is_admin - from the
+	// request body, so any authenticated account could assert admin and drive
+	// claims, resolutions and the withdrawal money path. The Discord bot uses
+	// the ticket service in-process, not this API, so the whole group is
+	// operator-only. Membership shares the same trust model: discord_id and
+	// roles arrive from the caller.
 	ticketGroup := v1.Group("/tickets")
 	ticketGroup.Use(middleware.AuthMiddleware(hr.Setup.Token))
+	ticketGroup.Use(middleware.OperatorMiddleware())
 	ticketGroup.Use(middleware.RateLimiterMiddlewareWithPrefix(hr.Setup.Limiter, "ticket"))
 	hr.Setup.TicketHttp.GroupTicket(ticketGroup)
 
 	memberGroup := v1.Group("/membership")
 	memberGroup.Use(middleware.AuthMiddleware(hr.Setup.Token))
+	memberGroup.Use(middleware.OperatorMiddleware())
 	memberGroup.Use(middleware.RateLimiterMiddlewareWithPrefix(hr.Setup.Limiter, "membership"))
 	hr.Setup.MembershipHttp.GroupMembership(memberGroup)
 

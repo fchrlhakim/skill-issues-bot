@@ -27,7 +27,16 @@ func (h *Http) GroupUser(g *gin.RouterGroup) {
 	g.GET("/me", h.Me)
 }
 
+// List returns the user directory. Operator-only: it exposes every account's
+// email address, and the HTTP surface has no other notion of an operator (there
+// is no role column; admin is a Discord concept). The gate fails closed, so with
+// no OPERATOR_USER_IDS configured this endpoint returns 403 to everyone rather
+// than leaking the directory to any authenticated caller.
 func (h *Http) List(c *gin.Context) {
+	if !middleware.IsOperator(c) {
+		httplib.SetErrorResponse(c, http.StatusForbidden, primitive.MessageForbidden, nil)
+		return
+	}
 	query, err := httplib.GetCursorPaginationFromCtx(c)
 	if err != nil {
 		httplib.SetErrorResponse(c, http.StatusBadRequest, "invalid cursor", nil)

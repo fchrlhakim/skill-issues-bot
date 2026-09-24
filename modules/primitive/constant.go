@@ -9,6 +9,7 @@ const (
 	MessageInvalidCredential = "invalid credentials" // #nosec G101 -- user-facing error message, not a secret.
 	MessageUnauthorized      = "unauthorized"
 	MessageUserNotFound      = "user not found"
+	MessageForbidden         = "forbidden"
 	MessageRefreshSuccess    = "refresh success"
 	MessageLogoutSuccess     = "logout success"
 
