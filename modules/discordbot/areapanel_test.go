@@ -122,3 +122,26 @@ func TestTierLabelNamesTheSide(t *testing.T) {
 		}
 	}
 }
+
+// Someone who presses Verify a second time is usually looking for a channel
+// they cannot see. The reply must name the side, name the hidden area, and give
+// the route to the other side, instead of a bare "nothing changed".
+func TestAlreadyVerifiedReplyIsActionable(t *testing.T) {
+	buyer := alreadyVerifiedReply("Buyer")
+	for _, want := range []string{"already a **Buyer**", "Buyer Area is open", "Seller Area stays hidden", "#open-a-ticket"} {
+		if !strings.Contains(buyer, want) {
+			t.Errorf("buyer reply missing %q:\n%s", want, buyer)
+		}
+	}
+	seller := alreadyVerifiedReply("Seller")
+	for _, want := range []string{"already a **Seller**", "Seller Area is open", "Buyer Area stays hidden"} {
+		if !strings.Contains(seller, want) {
+			t.Errorf("seller reply missing %q:\n%s", want, seller)
+		}
+	}
+	// A member with no tier must not be told they have an open area.
+	none := alreadyVerifiedReply(tierLabel([]string{membership.RoleUser}))
+	if strings.Contains(none, "Area is open to you") {
+		t.Errorf("unverified member must not be promised an area:\n%s", none)
+	}
+}

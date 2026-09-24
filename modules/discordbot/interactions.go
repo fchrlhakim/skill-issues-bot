@@ -301,7 +301,7 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 				"the Seller Area stays hidden until an admin approves a seller application.", nil, nil)
 			return
 		}
-		b.edit(s, i, "You are already a **"+tierLabel(actor.Roles)+"**. Your marketplace access is unchanged.", nil, nil)
+		b.edit(s, i, alreadyVerifiedReply(tierLabel(actor.Roles)), nil, nil)
 		return
 	}
 	parts := strings.SplitN(cid, ":", 3)

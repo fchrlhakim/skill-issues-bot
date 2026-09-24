@@ -228,6 +228,31 @@ func tierLabel(roles []string) string {
 	}
 }
 
+// alreadyVerifiedReply answers someone who presses Verify but already has
+// marketplace access. Telling them only that nothing changed is a dead end: the
+// common reason to press it again is that a channel is missing and they assume
+// verification failed. The reply names the side, says which area is therefore
+// hidden, and gives the route to the other side.
+//
+// The default branch must not promise an area: the caller only reaches this for
+// a Buyer or a Seller, but a helper that claims an open area for an unverified
+// member would be a lie the moment someone calls it from elsewhere.
+func alreadyVerifiedReply(label string) string {
+	msg := "You are already a **" + label + "**. Nothing changed."
+	switch label {
+	case "Seller":
+		return msg + " The Seller Area is open to you and the Buyer Area stays hidden. " +
+			"Buyer and Seller are separate on purpose; there is nothing to re-verify."
+	case "Buyer":
+		return msg + " The Buyer Area is open to you and the Seller Area stays hidden. " +
+			"That is by design, not a failed verification. Seller access comes from an admin " +
+			"after a seller application — open a ticket in #open-a-ticket if you want to apply."
+	default:
+		return msg + " Marketplace access is granted by verification or by an admin. " +
+			"Ask an admin to check your roles if you expected an area to be open."
+	}
+}
+
 func (b *Bot) reconcileSummary(repaired, pruned int) string {
 	return fmt.Sprintf("Tier sync complete. Repaired %d stored tier(s), pruned %d row(s) for members who left.", repaired, pruned)
 }
