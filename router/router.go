@@ -33,6 +33,21 @@ func (hr *HandlerRouter) RouterWithMiddleware() *gin.Engine {
 	}
 
 	r := gin.New()
+	// MAX_MULTIPART_MEMORY caps how much of a multipart body gin buffers in
+	// memory before spilling to a temp file. It was parsed from the environment
+	// but never applied, so the upload route used gin's 32MB default and could
+	// buffer far more per request than the configured budget.
+	if hr.Setup.Config.MaxMultipart > 0 {
+		r.MaxMultipartMemory = hr.Setup.Config.MaxMultipart
+	}
+	// Only these peers may set the client IP via X-Forwarded-For. The default
+	// trusts every proxy, which would let any caller spoof its own address for
+	// rate limiting, access logs and audit records. An empty list trusts none,
+	// so the peer address is used — correct when the service is loopback-only.
+	if err := r.SetTrustedProxies(hr.Setup.Config.TrustedProxies); err != nil {
+		hr.Setup.Logger.WithError(err).Warn("invalid TRUSTED_PROXIES; no proxy will be trusted")
+		_ = r.SetTrustedProxies(nil)
+	}
 	r.Use(middleware.Recovery(hr.Setup.Logger))
 	r.Use(gzip.Gzip(gzip.DefaultCompression))
 	r.Use(middleware.AccessLog(hr.Setup.Logger))
