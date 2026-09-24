@@ -68,8 +68,14 @@ func (s *Service) Refresh(ctx context.Context, request primitive.RefreshTokenReq
 	if _, err := s.repository.FindRefreshToken(ctx, tokenHash); err != nil {
 		return primitive.LoginResponse{}, err
 	}
-	if err := s.repository.RevokeRefreshToken(ctx, tokenHash); err != nil {
+	// Single-use rotation. Losing this race means the token was already spent
+	// (or is being replayed), so no new pair is issued for it.
+	revoked, err := s.repository.RevokeRefreshToken(ctx, tokenHash)
+	if err != nil {
 		return primitive.LoginResponse{}, err
+	}
+	if !revoked {
+		return primitive.LoginResponse{}, ErrInvalidCredential
 	}
 
 	tokens, err := s.token.GeneratePair(claims.UserID)
@@ -94,7 +100,8 @@ func (s *Service) Logout(ctx context.Context, request primitive.LogoutRequest) e
 	if request.RevokeAll {
 		return s.repository.RevokeRefreshTokensByUserID(ctx, claims.UserID)
 	}
-	return s.repository.RevokeRefreshToken(ctx, hashToken(request.RefreshToken))
+	_, err = s.repository.RevokeRefreshToken(ctx, hashToken(request.RefreshToken))
+	return err
 }
 
 func hashToken(token string) string {

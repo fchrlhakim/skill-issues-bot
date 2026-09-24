@@ -14,7 +14,7 @@ type RepositoryInterface interface {
 	FindUserByEmail(ctx context.Context, email string) (primitive.User, error)
 	SaveRefreshToken(ctx context.Context, token primitive.RefreshToken) error
 	FindRefreshToken(ctx context.Context, tokenHash string) (primitive.RefreshToken, error)
-	RevokeRefreshToken(ctx context.Context, tokenHash string) error
+	RevokeRefreshToken(ctx context.Context, tokenHash string) (bool, error)
 	RevokeRefreshTokensByUserID(ctx context.Context, userID uuid.UUID) error
 }
 
@@ -51,11 +51,20 @@ func (r *Repository) FindRefreshToken(ctx context.Context, tokenHash string) (pr
 	return data, nil
 }
 
-func (r *Repository) RevokeRefreshToken(ctx context.Context, tokenHash string) error {
-	return r.db.WithContext(ctx).
+// RevokeRefreshToken marks a refresh token used. It reports false when the token
+// was already revoked, which is what makes rotation single-use: two concurrent
+// refreshes with the same token would otherwise both pass FindRefreshToken and
+// both mint a new pair. The conditional UPDATE plus RowsAffected check is the
+// compare-and-swap that decides the winner.
+func (r *Repository) RevokeRefreshToken(ctx context.Context, tokenHash string) (bool, error) {
+	result := r.db.WithContext(ctx).
 		Model(&primitive.RefreshToken{}).
 		Where("token_hash = ? AND revoked_at IS NULL", tokenHash).
-		Update("revoked_at", gorm.Expr("NOW()")).Error
+		Update("revoked_at", gorm.Expr("NOW()"))
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 func (r *Repository) RevokeRefreshTokensByUserID(ctx context.Context, userID uuid.UUID) error {

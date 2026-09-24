@@ -22,7 +22,9 @@ type stubAuthRepository struct {
 	revokedTokenHash  string
 	revokedUserID     uuid.UUID
 	revokeTokenCalled bool
-	revokeAllCalled   bool
+	// revokeLoses models losing the single-use rotation race.
+	revokeLoses     bool
+	revokeAllCalled bool
 }
 
 func (r *stubAuthRepository) FindUserByEmail(ctx context.Context, email string) (primitive.User, error) {
@@ -52,10 +54,11 @@ func (r *stubAuthRepository) FindRefreshToken(ctx context.Context, tokenHash str
 	return token, nil
 }
 
-func (r *stubAuthRepository) RevokeRefreshToken(ctx context.Context, tokenHash string) error {
+func (r *stubAuthRepository) RevokeRefreshToken(ctx context.Context, tokenHash string) (bool, error) {
 	r.revokeTokenCalled = true
 	r.revokedTokenHash = tokenHash
-	return nil
+	// revokeLoses models a concurrent request that already spent the token.
+	return !r.revokeLoses, nil
 }
 
 func (r *stubAuthRepository) RevokeRefreshTokensByUserID(ctx context.Context, userID uuid.UUID) error {
@@ -188,5 +191,26 @@ func TestLogoutRevokeAllUsesTokenUserID(t *testing.T) {
 	}
 	if repository.revokeTokenCalled {
 		t.Fatalf("expected single-token revoke not to be called")
+	}
+}
+
+// Refresh rotation must be single-use. Two concurrent refreshes with the same
+// token both passed the lookup and both minted a new pair, because the revoke
+// never reported whether it actually won.
+func TestRefreshRejectsAlreadySpentToken(t *testing.T) {
+	repository := &stubAuthRepository{refreshTokens: map[string]primitive.RefreshToken{}}
+	service := NewService(repository, stubUserService{}, jwt.NewService("0123456789abcdef0123456789abcdef", time.Minute, time.Hour)).(*Service)
+
+	tokens, err := service.token.GeneratePair(uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The token exists and is not revoked, so the lookup succeeds...
+	repository.refreshTokens[hashToken(tokens.RefreshToken)] = primitive.RefreshToken{TokenHash: hashToken(tokens.RefreshToken)}
+	// ...but another request already spent it: the revoke loses the race.
+	repository.revokeLoses = true
+
+	if _, err := service.Refresh(context.Background(), primitive.RefreshTokenRequest{RefreshToken: tokens.RefreshToken}); err == nil {
+		t.Fatal("a replayed refresh token minted a new pair")
 	}
 }
