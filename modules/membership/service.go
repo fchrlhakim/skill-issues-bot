@@ -12,14 +12,18 @@ import (
 
 type ServiceInterface interface {
 	Upsert(ctx context.Context, discordID, username, tier string, ageDays int, restricted bool) (primitive.GuildMember, error)
+	Delete(ctx context.Context, discordID string) error
 	Find(ctx context.Context, discordID string) (primitive.GuildMember, error)
+	List(ctx context.Context) ([]primitive.GuildMember, error)
 	Verify(ctx context.Context, discordID string, roles []string, ageDays int) (VerifyDecision, error)
 	Snapshot(ctx context.Context) (ServerSnapshot, error)
 }
 
 type RepositoryInterface interface {
 	Upsert(ctx context.Context, member primitive.GuildMember) (primitive.GuildMember, error)
+	Delete(ctx context.Context, discordID string) error
 	FindByDiscordID(ctx context.Context, discordID string) (primitive.GuildMember, error)
+	List(ctx context.Context) ([]primitive.GuildMember, error)
 	Snapshot(ctx context.Context) (ServerSnapshot, error)
 }
 
@@ -52,6 +56,20 @@ func (r *Repository) Upsert(ctx context.Context, member primitive.GuildMember) (
 		return primitive.GuildMember{}, err
 	}
 	return existing, nil
+}
+
+func (r *Repository) Delete(ctx context.Context, discordID string) error {
+	return r.db.WithContext(ctx).Where("discord_id = ?", discordID).Delete(&primitive.GuildMember{}).Error
+}
+
+// List returns every stored member. Reconciliation needs the whole table, and
+// Snapshot only returns counts.
+func (r *Repository) List(ctx context.Context) ([]primitive.GuildMember, error) {
+	var members []primitive.GuildMember
+	if err := r.db.WithContext(ctx).Order("created_at ASC").Find(&members).Error; err != nil {
+		return nil, err
+	}
+	return members, nil
 }
 
 func (r *Repository) FindByDiscordID(ctx context.Context, discordID string) (primitive.GuildMember, error) {
@@ -101,6 +119,16 @@ func (s *Service) Upsert(ctx context.Context, discordID, username, tier string, 
 	return s.repository.Upsert(ctx, primitive.GuildMember{
 		DiscordID: discordID, Username: username, Tier: tier, AccountAgeDays: ageDays, Restricted: restricted,
 	})
+}
+
+func (s *Service) Delete(ctx context.Context, discordID string) error {
+	return s.repository.Delete(ctx, discordID)
+}
+
+// List returns every stored member so callers can compare the stored tier
+// against the roles Discord actually holds.
+func (s *Service) List(ctx context.Context) ([]primitive.GuildMember, error) {
+	return s.repository.List(ctx)
 }
 
 func (s *Service) Find(ctx context.Context, discordID string) (primitive.GuildMember, error) {

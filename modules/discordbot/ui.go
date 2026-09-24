@@ -266,3 +266,31 @@ func formatQueue(recs []ticket.Record) string {
 	}
 	return b.String()
 }
+
+// memberPanel explains the two marketplace roles and shows how many members
+// currently hold each one. The counts come from Discord's own roles, not from
+// the stored tier column, because the roles are what actually decide who can
+// see which channels.
+func memberPanel(counts map[string]int, total int) *discordgo.InteractionResponseData {
+	side := func(tier string) string {
+		return itoa(counts[tier]) + " member(s)"
+	}
+	return &discordgo.InteractionResponseData{
+		Embeds: []*discordgo.MessageEmbed{{
+			Title: "🧭 Buyer and Seller are separate areas", Color: 0x3498DB,
+			Description: "This server has two marketplace roles. They are mutually exclusive: " +
+				"granting one removes the other, so nobody is both.\n" +
+				"Each area is hidden from the other side — a Buyer cannot read the Seller " +
+				"channels, and a Seller cannot read the Buyer channels.",
+			Fields: []*discordgo.MessageEmbedField{
+				{Name: "🛍️ Buyer", Value: side(membership.TierBuyer) + "\nMarketplace access. Buys. Cannot see the Seller Area."},
+				{Name: "🏪 Seller", Value: side(membership.TierSeller) + "\nSells and can withdraw. Cannot see the Buyer Area."},
+				{Name: "How to get one", Value: "Press **Verify** in the #verification channel to become a Buyer.\n" +
+					"Seller is granted by an admin after a seller application."},
+				{Name: "Everyone else", Value: itoa(total) + " member(s) in the guild hold neither role yet."},
+			},
+			Footer: &discordgo.MessageEmbedFooter{Text: disclaimer},
+		}},
+		AllowedMentions: &discordgo.MessageAllowedMentions{},
+	}
+}

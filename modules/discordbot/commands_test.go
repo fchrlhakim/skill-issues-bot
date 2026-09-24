@@ -9,7 +9,8 @@ func TestCommandCatalogMatchesHandoff(t *testing.T) {
 		"whoami": false, "safety": false, "lookup": true, "withdraw": false, "mutasi": false,
 		"seller-approve": true, "withdraw-paid": true, "rolesync": true, "guildsync": true,
 		"automodsync": true,
-		"server":      true, "revenue": true,
+		"memberpanel": true, "membersync": true,
+		"server": true, "revenue": true,
 	}
 	if len(Commands) != len(want) {
 		t.Fatalf("got %d commands", len(Commands))

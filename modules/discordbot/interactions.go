@@ -150,6 +150,23 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 			lines = append(lines, fmt.Sprintf("`%s` %s %s %s", row.PublicID, row.Reference, row.Currency, row.PaidAt.Format("2006-01-02")))
 		}
 		b.edit(s, i, strings.Join(lines, "\n"), nil, nil)
+	case "memberpanel":
+		counts, neither, err := b.liveTierCounts()
+		if err != nil {
+			b.edit(s, i, "Could not read the member list: "+err.Error(), nil, nil)
+			return
+		}
+		_, _ = s.ChannelMessageSendComplex(i.ChannelID, &discordgo.MessageSend{
+			Embeds: memberPanel(counts, neither).Embeds, AllowedMentions: &discordgo.MessageAllowedMentions{},
+		})
+		b.edit(s, i, "Panel posted.", nil, nil)
+	case "membersync":
+		repaired, pruned, err := b.reconcileTiers(ctx)
+		if err != nil {
+			b.edit(s, i, "Sync failed: "+err.Error(), nil, nil)
+			return
+		}
+		b.edit(s, i, b.reconcileSummary(repaired, pruned), nil, nil)
 	case "server":
 		b.edit(s, i, b.serverSnapshot(ctx, s), nil, nil)
 	case "revenue":
@@ -195,8 +212,8 @@ func (b *Bot) handleCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 				// The record now says Seller. If Discord never got the role the member
 				// is a seller in the database and a plain member in the guild, so a
 				// silent failure here is a real divergence between the two stores.
-				if tierErr := b.exclusiveTier(s, rec.OpenerID, membership.TierSeller); tierErr != nil && b.log != nil {
-					b.log.WithError(tierErr).WithField("discord_id", rec.OpenerID).Warn("seller approved but the Seller role was not granted")
+				if tierErr := b.setTier(s, rec.OpenerID, membership.TierSeller, ""); tierErr != nil && b.log != nil {
+					b.log.WithError(tierErr).WithField("discord_id", rec.OpenerID).Warn("seller approved but the Seller role or the stored tier did not update")
 				}
 			}
 			b.replyRecord(s, i, next, err)
@@ -260,7 +277,9 @@ func (b *Bot) handleComponent(s *discordgo.Session, i *discordgo.InteractionCrea
 			return
 		}
 		if decision.Action == "verify" {
-			_ = b.exclusiveTier(s, actor.ID, membership.TierBuyer)
+			if tierErr := b.setTier(s, actor.ID, membership.TierBuyer, i.Member.User.Username); tierErr != nil && b.log != nil {
+				b.log.WithError(tierErr).WithField("discord_id", actor.ID).Warn("verify granted but the Buyer role or the stored tier did not update")
+			}
 		}
 		b.edit(s, i, "Membership confirmed. "+decision.Reason, nil, nil)
 		return

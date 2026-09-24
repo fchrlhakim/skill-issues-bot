@@ -519,15 +519,14 @@ func (b *Bot) onJoin(s *discordgo.Session, ev *discordgo.GuildMemberAdd) {
 	if ev.GuildID != b.guildID || ev.User == nil || ev.User.Bot {
 		return
 	}
-	// A failure here leaves the member without the User role while the row below
-	// still records TierUser, so the two sources of truth silently disagree. It
-	// is not fatal to the join, but it must be visible.
-	if err := b.exclusiveTier(s, ev.User.ID, membership.TierUser); err != nil && b.log != nil {
+	// One call so the role and the stored tier cannot disagree. A failure here
+	// leaves the member without the User role while the row would still say
+	// TierUser, so the two sources of truth silently diverge.
+	if err := b.setTier(s, ev.User.ID, membership.TierUser, ev.User.Username); err != nil && b.log != nil {
 		b.log.WithError(err).WithField("discord_id", ev.User.ID).Warn("could not grant the User tier on join")
 	}
-	age := accountAgeDays(ev.User)
-	_, _ = b.members.Upsert(context.Background(), ev.User.ID, ev.User.Username, membership.TierUser, age, false)
 	b.noteJoin()
+	age := accountAgeDays(ev.User)
 	if age < 7 {
 		b.staff("New account joined: member " + ev.User.ID + " is " + itoa(age) + "d old. Watch first messages.")
 	}
