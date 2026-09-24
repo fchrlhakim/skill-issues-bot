@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"os"
 	"strconv"
 	"strings"
@@ -18,17 +19,26 @@ type Config struct {
 	LogLevel       string
 	LogFormat      string
 	AllowedOrigins []string
-	HTTP           HTTPConfig
-	JWT            JWTConfig
-	Database       DatabaseConfig
-	Redis          RedisConfig
-	HTTPClient     HTTPClientConfig
-	RateLimit      RateLimitConfig
-	Storage        StorageConfig
-	Metrics        MetricsConfig
-	Discord        DiscordConfig
-	MaxBodyBytes   int64
-	MaxMultipart   int64
+	// TrustedProxies lists the CIDRs whose X-Forwarded-For may be believed.
+	// Empty means "trust none", which is correct for a service published only on
+	// loopback: the peer address is then the real client.
+	TrustedProxies []string
+	// OperatorAllowlist holds the user ids allowed to read operator-only data
+	// (the user directory and the audit trail). Empty means nobody, which is the
+	// safe default: this repo has no role column, so there is no other way to
+	// identify an operator.
+	OperatorAllowlist []uuid.UUID
+	HTTP              HTTPConfig
+	JWT               JWTConfig
+	Database          DatabaseConfig
+	Redis             RedisConfig
+	HTTPClient        HTTPClientConfig
+	RateLimit         RateLimitConfig
+	Storage           StorageConfig
+	Metrics           MetricsConfig
+	Discord           DiscordConfig
+	MaxBodyBytes      int64
+	MaxMultipart      int64
 }
 
 type HTTPConfig struct {
@@ -93,12 +103,14 @@ func Load() (Config, error) {
 	_ = godotenv.Load()
 
 	cfg := Config{
-		Env:            getEnv("APP_ENV", "local"),
-		Name:           getEnv("APP_NAME", "go-starter-kit"),
-		Port:           getEnv("APP_PORT", "8080"),
-		LogLevel:       getEnv("APP_LOG_LEVEL", "info"),
-		LogFormat:      getEnv("APP_LOG_FORMAT", "json"),
-		AllowedOrigins: splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
+		Env:               getEnv("APP_ENV", "local"),
+		Name:              getEnv("APP_NAME", "go-starter-kit"),
+		Port:              getEnv("APP_PORT", "8080"),
+		LogLevel:          getEnv("APP_LOG_LEVEL", "info"),
+		LogFormat:         getEnv("APP_LOG_FORMAT", "json"),
+		AllowedOrigins:    splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")),
+		TrustedProxies:    splitCSV(getEnv("TRUSTED_PROXIES", "")),
+		OperatorAllowlist: parseUUIDList(getEnv("OPERATOR_USER_IDS", "")),
 		HTTP: HTTPConfig{
 			ReadTimeout:       getDuration("HTTP_READ_TIMEOUT", 10*time.Second),
 			ReadHeaderTimeout: getDuration("HTTP_READ_HEADER_TIMEOUT", 5*time.Second),
@@ -259,6 +271,18 @@ func getFloat(key string, fallback float64) float64 {
 		return fallback
 	}
 	return parsed
+}
+
+// parseUUIDList reads a comma-separated allowlist, skipping anything that is not
+// a UUID. A malformed entry is dropped rather than widening access.
+func parseUUIDList(value string) []uuid.UUID {
+	var ids []uuid.UUID
+	for _, part := range splitCSV(value) {
+		if parsed, err := uuid.Parse(part); err == nil && parsed != uuid.Nil {
+			ids = append(ids, parsed)
+		}
+	}
+	return ids
 }
 
 func splitCSV(value string) []string {
