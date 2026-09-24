@@ -37,9 +37,9 @@ type Ticket struct {
 	ClosedAt       *time.Time `gorm:"column:closed_at;index" json:"closed_at,omitempty"`
 	DataJSON       string     `gorm:"column:data_json;type:jsonb;not null;default:'{}'" json:"-"`
 	HistoryJSON    string     `gorm:"column:history_json;type:jsonb;not null;default:'[]'" json:"-"`
-	ResolutionJSON string     `gorm:"column:resolution_json;type:jsonb" json:"-"`
-	WithdrawalJSON string     `gorm:"column:withdrawal_json;type:jsonb" json:"-"`
-	SellerJSON     string     `gorm:"column:seller_approval_json;type:jsonb" json:"-"`
+	ResolutionJSON *string    `gorm:"column:resolution_json;type:jsonb" json:"-"`
+	WithdrawalJSON *string    `gorm:"column:withdrawal_json;type:jsonb" json:"-"`
+	SellerJSON     *string    `gorm:"column:seller_approval_json;type:jsonb" json:"-"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 }

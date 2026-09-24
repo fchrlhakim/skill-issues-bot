@@ -52,7 +52,14 @@ type RepositoryInterface interface {
 	ListOpen(ctx context.Context) ([]Record, error)
 	ListByOpener(ctx context.Context, openerID string) ([]Record, error)
 	ListOutgoingBySeller(ctx context.Context, sellerID string) ([]primitive.OutgoingMutation, error)
-	SaveOutgoing(ctx context.Context, rec primitive.OutgoingMutation) error
+	// OutgoingExists reports whether a payment reference is already recorded for
+	// ANY seller. A reference is a receipt, so it is globally single-use: without
+	// this check the duplicate guard only sees the tickets the caller happened to
+	// load, and the same receipt could be booked as two payouts.
+	OutgoingExists(ctx context.Context, reference string) (bool, error)
+	// SavePayment persists the ticket state and its outgoing ledger row
+	// atomically, so a paid ticket can never exist without its ledger row.
+	SavePayment(ctx context.Context, rec Record, outgoing primitive.OutgoingMutation) error
 	Snapshot(ctx context.Context) (Snapshot, error)
 }
 
@@ -329,16 +336,35 @@ func (s *Service) RecordPayment(ctx context.Context, actor Actor, publicID, refe
 	if err != nil {
 		return Record{}, err
 	}
-	if err := s.repository.Save(ctx, next); err != nil {
+	// The in-memory guard above only sees the tickets loaded for this call. The
+	// durable table is the source of truth for "this receipt was already paid",
+	// so it is consulted before anything is written.
+	exists, err := s.repository.OutgoingExists(ctx, next.Withdrawal.Outgoing.Reference)
+	if err != nil {
 		return Record{}, err
 	}
-	if next.Withdrawal != nil && next.Withdrawal.Outgoing != nil {
-		paidAt, _ := time.Parse("2006-01-02T15:04:05.000Z", next.Withdrawal.Outgoing.At)
-		_ = s.repository.SaveOutgoing(ctx, primitive.OutgoingMutation{
-			PublicID: next.Withdrawal.Outgoing.ID, TicketID: rec.ID, SellerID: rec.OpenerID,
-			AmountMinor: next.Withdrawal.AmountMinor, Currency: next.Withdrawal.Currency,
-			Reference: next.Withdrawal.Outgoing.Reference, By: actor.ID, PaidAt: paidAt,
-		})
+	if exists {
+		return Record{}, ErrDuplicatePayment
+	}
+	if next.Withdrawal == nil || next.Withdrawal.Outgoing == nil {
+		return Record{}, ErrWithdrawalInvalid
+	}
+	paidAt, err := time.Parse("2006-01-02T15:04:05.000Z", next.Withdrawal.Outgoing.At)
+	if err != nil {
+		return Record{}, err
+	}
+	// The outgoing ledger row is the seller's record that a payout happened, and
+	// /revenue and /mutasi read it. Ticket state and ledger row are written in
+	// one transaction: a paid ticket must never exist without the ledger row
+	// that proves it, and the unique index on reference still decides which
+	// concurrent caller wins.
+	outgoing := primitive.OutgoingMutation{
+		PublicID: next.Withdrawal.Outgoing.ID, TicketID: rec.ID, SellerID: rec.OpenerID,
+		AmountMinor: next.Withdrawal.AmountMinor, Currency: next.Withdrawal.Currency,
+		Reference: next.Withdrawal.Outgoing.Reference, By: actor.ID, PaidAt: paidAt,
+	}
+	if err := s.repository.SavePayment(ctx, next, outgoing); err != nil {
+		return Record{}, err
 	}
 	return next, nil
 }

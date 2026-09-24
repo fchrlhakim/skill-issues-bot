@@ -114,8 +114,43 @@ func (r *Repository) ListOutgoingBySeller(ctx context.Context, sellerID string) 
 	return rows, nil
 }
 
-func (r *Repository) SaveOutgoing(ctx context.Context, rec primitive.OutgoingMutation) error {
-	return r.db.WithContext(ctx).Create(&rec).Error
+func (r *Repository) OutgoingExists(ctx context.Context, reference string) (bool, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&primitive.OutgoingMutation{}).Where("reference = ?", reference).Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// SavePayment writes the ticket's new state and its outgoing ledger row in one
+// transaction. Recording payment used to be two independent writes, so a
+// failure between them (or a concurrent caller booking the same reference)
+// could leave a ticket marked paid with no ledger row - the seller's record
+// that the payout happened would simply be missing. The unique index on
+// outgoing_mutations.reference still decides the winner; this only guarantees
+// the ticket state and the ledger move together.
+func (r *Repository) SavePayment(ctx context.Context, rec Record, outgoing primitive.OutgoingMutation) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		row := toModel(rec)
+		var existing primitive.Ticket
+		err := tx.Where("public_id = ?", rec.ID).First(&existing).Error
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			if err := tx.Create(&row).Error; err != nil {
+				return err
+			}
+		case err != nil:
+			return err
+		default:
+			row.ID = existing.ID
+			row.Seq = existing.Seq
+			row.CreatedAt = existing.CreatedAt
+			if err := tx.Save(&row).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Create(&outgoing).Error
+	})
 }
 func (r *Repository) Snapshot(ctx context.Context) (Snapshot, error) {
 	var tickets []primitive.Ticket
@@ -138,6 +173,16 @@ func (r *Repository) Snapshot(ctx context.Context) (Snapshot, error) {
 		out.Totals[row.Currency] += row.AmountMinor
 	}
 	return out, nil
+}
+
+// Optional jsonb columns are NULL when absent. They must NOT be written as an
+// empty string: Postgres rejects ” as invalid JSON input, so every ticket
+// insert without a resolution failed with 22P02.
+func jsonOrNull(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func toModel(rec Record) primitive.Ticket {
@@ -163,13 +208,13 @@ func toModel(rec Record) primitive.Ticket {
 		row.ClosedAt = &t
 	}
 	if rec.Resolution != nil {
-		row.ResolutionJSON = EncodeJSON(rec.Resolution)
+		row.ResolutionJSON = jsonOrNull(EncodeJSON(rec.Resolution))
 	}
 	if rec.Withdrawal != nil {
-		row.WithdrawalJSON = EncodeJSON(rec.Withdrawal)
+		row.WithdrawalJSON = jsonOrNull(EncodeJSON(rec.Withdrawal))
 	}
 	if rec.SellerApproval != nil {
-		row.SellerJSON = EncodeJSON(rec.SellerApproval)
+		row.SellerJSON = jsonOrNull(EncodeJSON(rec.SellerApproval))
 	}
 	return row
 }
@@ -183,21 +228,21 @@ func fromModel(row primitive.Ticket) Record {
 	}
 	_ = json.Unmarshal([]byte(emptyJSON(row.DataJSON, "{}")), &rec.Data)
 	_ = json.Unmarshal([]byte(emptyJSON(row.HistoryJSON, "[]")), &rec.History)
-	if row.ResolutionJSON != "" {
+	if row.ResolutionJSON != nil && *row.ResolutionJSON != "" {
 		var res Resolution
-		if json.Unmarshal([]byte(row.ResolutionJSON), &res) == nil {
+		if json.Unmarshal([]byte(*row.ResolutionJSON), &res) == nil {
 			rec.Resolution = &res
 		}
 	}
-	if row.WithdrawalJSON != "" {
+	if row.WithdrawalJSON != nil && *row.WithdrawalJSON != "" {
 		var wd Withdrawal
-		if json.Unmarshal([]byte(row.WithdrawalJSON), &wd) == nil {
+		if json.Unmarshal([]byte(*row.WithdrawalJSON), &wd) == nil {
 			rec.Withdrawal = &wd
 		}
 	}
-	if row.SellerJSON != "" {
+	if row.SellerJSON != nil && *row.SellerJSON != "" {
 		var sa SellerApproval
-		if json.Unmarshal([]byte(row.SellerJSON), &sa) == nil {
+		if json.Unmarshal([]byte(*row.SellerJSON), &sa) == nil {
 			rec.SellerApproval = &sa
 		}
 	}
