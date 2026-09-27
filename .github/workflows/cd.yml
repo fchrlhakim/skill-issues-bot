@@ -151,7 +151,10 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
           passphrase: ${{ secrets.SSH_PASSPHRASE || '' }}
-          source: 'docker-compose.prod.yml,.env.example'
+          # scripts/bootstrap-saas-credential.sh must reach the host: the deploy
+          # directory is not a git clone, and a revoked /revenue credential can
+          # only be repaired there (it needs the SaaS env and the bot volume).
+          source: 'docker-compose.prod.yml,.env.example,scripts/bootstrap-saas-credential.sh'
           target: ${{ secrets.DEPLOY_PATH || '~/app/skill-issues-bot' }}
 
       - name: Execute deployment commands via SSH

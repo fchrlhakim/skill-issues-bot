@@ -50,6 +50,23 @@ stored chain outranks the environment, so the environment value is only read on 
 very first start. Never present a refresh token twice — the SaaS revokes the whole
 token family on reuse, which requires a fresh bootstrap.
 
+`scripts/bootstrap-saas-credential.sh` does that bootstrap. Run it on the
+application host (it needs docker, sudo, the SaaS `.env.production`, and the bot
+volume), preview it with `--dry-run`, and restart `bot-be` afterwards:
+
+```sh
+scripts/bootstrap-saas-credential.sh --dry-run
+scripts/bootstrap-saas-credential.sh
+cd ~/app/skill-issues-bot && sudo docker compose -f docker-compose.prod.yml \
+  --env-file .env.production up -d bot-be
+```
+
+It mints the JWT from `JWT_SECRET`, derives the JWT `exp` claim and the
+`auth_sessions` row from the same `JWT_REFRESH_TTL` so the two clocks cannot
+disagree, supersedes any live session for the label, and deletes the persisted
+chain so the bot cannot replay the revoked one. Run it whenever `/revenue` reports
+`SaaS revenue: unavailable` with `refresh rejected with status 401` in the logs.
+
 ## 2. GitHub secrets (Actions)
 
 Same set as the other stacks:
