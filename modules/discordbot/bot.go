@@ -532,7 +532,7 @@ func (b *Bot) onJoin(s *discordgo.Session, ev *discordgo.GuildMemberAdd) {
 	}
 	if ch := b.channel("welcome"); ch != "" {
 		embed := &discordgo.MessageEmbed{
-			Title: "Welcome to Skillissue.ai", Color: 0x1ABC9C,
+			Title: "Welcome to Skill Issues", Color: 0x1ABC9C,
 			Description: "<@" + ev.User.ID + ">\nRead the rules, then Verify to access the marketplace.\n" + SafetyCopy,
 			Footer:      &discordgo.MessageEmbedFooter{Text: disclaimer},
 		}

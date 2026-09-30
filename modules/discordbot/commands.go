@@ -36,7 +36,7 @@ var Commands = []Command{
 }
 
 const SafetyCopy = "Admins never ask for passwords, OTP, PIN, CVV, full card numbers, API keys, private keys, or seed phrases. " +
-	"Skillissue.ai is an independent intermediary: it does not hold funds, process payments, or guarantee transactions. " +
+	"Skill Issues is an independent intermediary: it does not hold funds, process payments, or guarantee transactions. " +
 	"Every deal goes through a ticket — never DMs."
 
 const VerifyButtonID = "verify:accept"

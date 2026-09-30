@@ -33,7 +33,7 @@ var legacyStatuses = []Status{
 	{Key: "seller-confirmation", Label: "Seller Confirmation Needed", Next: []string{"buyer-confirmation", "payment-pending", "cancelled"}},
 	{Key: "payment-pending", Label: "Payment Pending", Next: []string{"payment-confirmed", "cancelled", "dispute-opened"}},
 	{Key: "payment-confirmed", Label: "Payment Confirmed by Relevant Party", Next: []string{"delivery-pending", "dispute-opened"},
-		Note: "Confirmed BY THE RELEVANT PARTY — Skillissue.ai does not verify or hold payments."},
+		Note: "Confirmed BY THE RELEVANT PARTY — Skill Issues does not verify or hold payments."},
 	{Key: "delivery-pending", Label: "Delivery Pending", Next: []string{"delivery-submitted", "dispute-opened", "cancelled"}},
 	{Key: "delivery-submitted", Label: "Delivery Submitted", Next: []string{"buyer-review", "dispute-opened"}},
 	{Key: "buyer-review", Label: "Buyer Review", Next: []string{"resolved", "dispute-opened"}},

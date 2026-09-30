@@ -36,7 +36,7 @@ func renderWelcomePNG(displayName string, memberCount int) []byte {
 	d.DrawString(name)
 	d.Src = image.NewUniform(color.RGBA{R: 180, G: 200, B: 210, A: 255})
 	d.Dot = fixed.P(40, 200)
-	d.DrawString("Skillissue.ai  ·  member #" + strconv.Itoa(memberCount))
+	d.DrawString("Skill Issues  ·  member #" + strconv.Itoa(memberCount))
 	d.Dot = fixed.P(40, 260)
 	d.DrawString("Read the rules, then Verify. Staff never ask for passwords or OTP.")
 	var buf bytes.Buffer

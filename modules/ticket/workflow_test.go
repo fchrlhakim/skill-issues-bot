@@ -1,6 +1,9 @@
 package ticket
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCanTransitionSupportAndWithdrawal(t *testing.T) {
 	if !CanTransition("buyer-support", WorkflowSupport, "open", "in-progress") {
@@ -54,5 +57,15 @@ func TestSensitiveCardNumber(t *testing.T) {
 	}
 	if len(SensitiveFindings(map[string]string{"text": "user id 123456789012345678"})) != 0 {
 		t.Fatal("discord-like digits should not always trip Luhn")
+	}
+}
+
+func TestPaymentConfirmedNoteUsesSkillIssuesBrand(t *testing.T) {
+	st, ok := StatusFor("purchase", WorkflowTransaction, "payment-confirmed")
+	if !ok {
+		t.Fatal("missing payment-confirmed")
+	}
+	if !strings.Contains(st.Note, "Skill Issues") || strings.Contains(st.Note, "Skillissue.ai") {
+		t.Fatalf("note=%q", st.Note)
 	}
 }

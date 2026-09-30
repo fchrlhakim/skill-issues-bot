@@ -10,7 +10,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-const disclaimer = "Skillissue.ai coordinates and reviews. It does not hold funds or guarantee outcomes."
+const disclaimer = "Skill Issues coordinates and reviews. It does not hold funds or guarantee outcomes."
 
 func ticketPanel() *discordgo.InteractionResponseData {
 	opts := make([]discordgo.SelectMenuOption, 0, len(ticket.Types))
@@ -23,7 +23,7 @@ func ticketPanel() *discordgo.InteractionResponseData {
 	}
 	return &discordgo.InteractionResponseData{
 		Embeds: []*discordgo.MessageEmbed{{
-			Title: "Open a Ticket — Skillissue.ai", Color: 0x4A2FBD, Footer: &discordgo.MessageEmbedFooter{Text: disclaimer},
+			Title: "Open a Ticket — Skill Issues", Color: 0x4A2FBD, Footer: &discordgo.MessageEmbedFooter{Text: disclaimer},
 			Description: "Members can open a ticket using the menu below.\n**Only server admins handle tickets.**\nYou can have one active ticket per type, up to three active tickets in total.\n\n**Never share** passwords, OTPs, PINs, CVVs, full card numbers, API or private keys, or seed phrases.",
 		}},
 		Components: []discordgo.MessageComponent{

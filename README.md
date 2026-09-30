@@ -62,7 +62,7 @@ Status graphs:
 
 The sensitive-input screen is `ticket.SensitiveFindings` (`modules/ticket/safety.go`). It rejects the ticket text. It does not store the secret.
 
-`SafetyCopy` in `modules/discordbot/commands.go` says: "Admins never ask for passwords, OTP, PIN, CVV, full card numbers, API keys, private keys, or seed phrases. Skillissue.ai is an independent intermediary: it does not hold funds, process payments, or guarantee transactions. Every deal goes through a ticket — never DMs."
+`SafetyCopy` in `modules/discordbot/commands.go` says: "Admins never ask for passwords, OTP, PIN, CVV, full card numbers, API keys, private keys, or seed phrases. Skill Issues is an independent intermediary: it does not hold funds, process payments, or guarantee transactions. Every deal goes through a ticket — never DMs."
 
 ## Withdrawals
 

@@ -17,7 +17,7 @@ type categorySpec struct {
 func launchLayout() []categorySpec {
 	return []categorySpec{
 		{Key: "start-here", Display: "🚀 ~ Start Here", Channels: []channelSpec{
-			{Key: "welcome", Topic: "What Skillissue.ai is, and how to begin. Read #rules next."},
+			{Key: "welcome", Topic: "What Skill Issues is, and how to begin. Read #rules next."},
 			{Key: "goodbye", Topic: "Member departure notices. Minimal public information."},
 			{Key: "rules", Topic: "Server and marketplace rules."},
 			{Key: "how-it-works", Topic: "Buyer flow, seller flow, tickets."},
