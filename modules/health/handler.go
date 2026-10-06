@@ -14,6 +14,9 @@ type Http struct {
 
 type HttpInterface interface {
 	GroupHealth(g *gin.RouterGroup)
+	// SetGateway attaches the Discord gateway prober so /health/ready can
+	// gate on it. The bot process calls this before opening the session.
+	SetGateway(p GatewayProber)
 }
 
 func NewHttp(service ServiceInterface) HttpInterface {
@@ -23,6 +26,12 @@ func NewHttp(service ServiceInterface) HttpInterface {
 func (h *Http) GroupHealth(g *gin.RouterGroup) {
 	g.GET("/live", h.Live)
 	g.GET("/ready", h.Ready)
+}
+
+// SetGateway forwards to the service. It lives on the handler because main
+// only holds the Http layer, not the service behind it.
+func (h *Http) SetGateway(p GatewayProber) {
+	h.service.SetGateway(p)
 }
 
 func (h *Http) Live(c *gin.Context) {

@@ -13,6 +13,7 @@ import (
 	"go-starter-kit/infrastructure/config"
 	"go-starter-kit/infrastructure/jwt"
 	"go-starter-kit/infrastructure/limiter"
+	"go-starter-kit/modules/health"
 	"go-starter-kit/modules/membership"
 	"go-starter-kit/modules/primitive"
 	"go-starter-kit/modules/ticket"
@@ -33,6 +34,8 @@ func (noopHttp) GroupUser(g *gin.RouterGroup)       { g.Any("/x", func(*gin.Cont
 func (noopHttp) GroupUpload(g *gin.RouterGroup)     { g.Any("/x", func(*gin.Context) {}) }
 func (noopHttp) GroupAuditLog(g *gin.RouterGroup)   { g.Any("/x", func(*gin.Context) {}) }
 func (noopHttp) GroupMembership(g *gin.RouterGroup) { g.Any("/x", func(*gin.Context) {}) }
+
+func (noopHttp) SetGateway(p health.GatewayProber) {}
 
 // membershipStub records whether the request reached the group, which is how
 // the operator gate is distinguished from "route missing".
