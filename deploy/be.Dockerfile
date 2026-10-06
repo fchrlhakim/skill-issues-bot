@@ -13,6 +13,7 @@ RUN CGO_ENABLED=0 go install -tags 'pgx5' github.com/golang-migrate/migrate/v4/c
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates tzdata wget \
+    && apt-get dist-upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 ENV TZ=Asia/Jakarta
 WORKDIR /app
