@@ -30,9 +30,10 @@ func (h *Http) Live(c *gin.Context) {
 }
 
 func (h *Http) Ready(c *gin.Context) {
-	if err := h.service.Ready(c.Request.Context()); err != nil {
-		httplib.SetErrorResponse(c, http.StatusServiceUnavailable, "not ready", nil)
+	status, err := h.service.Ready(c.Request.Context())
+	if err != nil {
+		httplib.SetErrorResponse(c, http.StatusServiceUnavailable, "not ready", status)
 		return
 	}
-	httplib.SetSuccessResponse(c, http.StatusOK, "ready", gin.H{"database": "ok"})
+	httplib.SetSuccessResponse(c, http.StatusOK, "ready", status)
 }

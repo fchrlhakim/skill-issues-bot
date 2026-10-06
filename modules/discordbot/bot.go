@@ -109,6 +109,19 @@ func (b *Bot) primeSaaSToken() {
 	}
 }
 
+// GatewayStatus reports whether the Discord gateway websocket is currently
+// usable. lastAck is the time Discord last acknowledged a heartbeat (set
+// again on every reconnect).
+func (b *Bot) GatewayStatus() (connected bool, lastAck time.Time) {
+	s := b.session
+	if s == nil {
+		return false, time.Time{}
+	}
+	s.RLock()
+	defer s.RUnlock()
+	return s.DataReady, s.LastHeartbeatAck
+}
+
 func (b *Bot) Close() error {
 	select {
 	case <-b.stop:

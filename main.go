@@ -12,6 +12,7 @@ import (
 	"go-starter-kit/boot"
 	"go-starter-kit/infrastructure/config"
 	"go-starter-kit/modules/discordbot"
+	"go-starter-kit/modules/health"
 	"go-starter-kit/router"
 )
 
@@ -48,6 +49,13 @@ func main() {
 		bot, err := discordbot.New(cfg.Discord.BotToken, cfg.Discord.GuildID, setup.TicketService, setup.MembershipService, setup.Logger)
 		if err != nil {
 			setup.Logger.Fatalf("discord bot: %v", err)
+		}
+		// Attach before Open() so /health/ready never reports a false "ok"
+		// during the connect window.
+		if hp, ok := setup.HealthHttp.(interface {
+			SetGateway(p health.GatewayProber)
+		}); ok {
+			hp.SetGateway(bot)
 		}
 		if err := bot.Open(); err != nil {
 			setup.Logger.Fatalf("discord login: %v", err)

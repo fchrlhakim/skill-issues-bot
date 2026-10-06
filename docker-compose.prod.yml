@@ -102,10 +102,14 @@ services:
       - saas
     logging: *default-logging
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/api/v1/health/live"]
-      interval: 10s
+      # readiness, not liveness: this must fail while the Discord gateway is
+      # down (revoked token, Discord outage) instead of reporting healthy.
+      # Interval*retries gives discordgo's reconnect loop ~3 minutes to get
+      # back before Docker kills a merely-hiccuping gateway.
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/api/v1/health/ready"]
+      interval: 15s
       timeout: 5s
-      retries: 5
+      retries: 12
       start_period: 30s
     deploy:
       resources:
