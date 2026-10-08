@@ -1,8 +1,11 @@
 package router
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -222,5 +225,64 @@ func TestTicketRoutesAllowListedOperator(t *testing.T) {
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &envelope); err != nil || !envelope.Success {
 		t.Fatalf("unexpected body: %s", w.Body.String())
+	}
+}
+
+// /api/v1/metrics must not be compressed by the router's gzip middleware.
+// promhttp.Handler already gzips when the client negotiates gzip, so a second
+// pass produced gzip(gzip(text)). Prometheus decodes exactly one layer and then
+// fails to parse the exposition format with
+// `expected a valid start token, got "\x1f"`, leaving the scrape target down
+// while the endpoint is healthy. The route is only registered when metrics are
+// enabled, so the test enables them and asserts the decoded body is the
+// exposition text, not a second gzip frame.
+func TestMetricsRouteIsNotGzipEncodedTwice(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tokens := jwt.NewService(strings.Repeat("k", 32), time.Minute, time.Hour)
+	stub := noopHttp{}
+	r := NewHandlerRouter(boot.HandlerSetup{
+		Config: config.Config{
+			Env:            "test",
+			AllowedOrigins: []string{"http://localhost:5173"},
+			Metrics:        config.MetricsConfig{Enable: true},
+		},
+		Logger:         logrus.New(),
+		Limiter:        limiter.NewLocalRateLimiter(1000, 1000),
+		Token:          tokens,
+		HealthHttp:     stub,
+		AuthHttp:       stub,
+		UserHttp:       stub,
+		UploadHttp:     stub,
+		AuditHttp:      stub,
+		MembershipHttp: stub,
+		TicketHttp:     ticket.NewHttp(ticket.NewService(nil), nil),
+	}).RouterWithMiddleware()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/metrics", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	// promhttp gzips on its own once the client negotiates gzip; that single
+	// layer must still be the only one, so one decode has to yield the
+	// exposition format. A second encoding leaves gzip magic as the first byte
+	// and fails here.
+	decoded, err := gzip.NewReader(bytes.NewReader(w.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("gzip.NewReader: %v", err)
+	}
+	plain, err := io.ReadAll(decoded)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !strings.Contains(string(plain), "# HELP") && !strings.Contains(string(plain), "# TYPE") {
+		preview := plain
+		if len(preview) > 16 {
+			preview = preview[:16]
+		}
+		t.Fatalf("decoded body is not the Prometheus exposition format: %q", preview)
 	}
 }

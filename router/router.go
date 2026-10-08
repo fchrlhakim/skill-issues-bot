@@ -49,7 +49,15 @@ func (hr *HandlerRouter) RouterWithMiddleware() *gin.Engine {
 		_ = r.SetTrustedProxies(nil)
 	}
 	r.Use(middleware.Recovery(hr.Setup.Logger))
-	r.Use(gzip.Gzip(gzip.DefaultCompression))
+	// /api/v1/metrics must not be compressed by this middleware. promhttp
+	// already gzips when the client negotiates gzip, so a second pass produces
+	// gzip(gzip(text)). Prometheus advertises Accept-Encoding: gzip and then
+	// decodes exactly one layer, so the scrape fails with
+	// `expected a valid start token, got "\x1f"` and the target reads as down
+	// while the endpoint is in fact healthy. The SaaS backend excludes the same
+	// path; the exclusion is only consulted inside the library's default
+	// shouldCompress, which this registration uses.
+	r.Use(gzip.Gzip(gzip.DefaultCompression, gzip.WithExcludedPaths([]string{"/api/v1/metrics"})))
 	r.Use(middleware.AccessLog(hr.Setup.Logger))
 	r.Use(middleware.RequestID())
 	r.Use(middleware.SecurityHeaders())
